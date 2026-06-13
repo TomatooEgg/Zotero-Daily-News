@@ -8,7 +8,7 @@ item_types:
 - report
 deepseek:
   base_url: https://api.deepseek.com
-  model: deepseek-chat
+  model: deepseek-v4-flash
 language: zh
 output:
   summaries_dir: summaries

@@ -185,7 +185,7 @@ def generate_pdf_summary(
 
     context = build_llm_context(item)
     prompt = build_pdf_summary_prompt(config, context, pdf_text, pdf_source)
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = config.get("deepseek", {}).get("model", "deepseek-v4-flash")
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],

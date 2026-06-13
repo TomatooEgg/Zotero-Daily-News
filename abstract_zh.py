@@ -77,7 +77,7 @@ def translate_abstract(client: OpenAI, abstract: str, config: dict) -> str:
     if is_mostly_chinese(abstract):
         return abstract.strip()
 
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = config.get("deepseek", {}).get("model", "deepseek-v4-flash")
     prompt = (
         "你是学术翻译助手。将以下文献摘要翻译为流畅、准确的中文。\n"
         "要求：只输出译文，不要标题、不要解释、不要 JSON。\n\n"

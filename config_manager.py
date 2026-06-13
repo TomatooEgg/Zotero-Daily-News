@@ -61,7 +61,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "count": 2,
     "history_days": 14,
     "item_types": ["journalArticle", "conferencePaper", "preprint", "report"],
-    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
     "language": "zh",
     "output": {
         "summaries_dir": "summaries",

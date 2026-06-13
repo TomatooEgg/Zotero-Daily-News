@@ -55,7 +55,7 @@ def config_for_ui() -> dict:
         "pdf_summary_enabled": bool((cfg.get("pdf_summary") or {}).get("enabled", True)),
         "pdf_summary_max_chars": int((cfg.get("pdf_summary") or {}).get("max_chars", 80000)),
         "pdf_summary_prompt": cfg.get("pdf_summary_prompt", DEFAULT_CONFIG["pdf_summary_prompt"]),
-        "deepseek_model": (cfg.get("deepseek") or {}).get("model", "deepseek-chat"),
+        "deepseek_model": (cfg.get("deepseek") or {}).get("model", "deepseek-v4-flash"),
     }
 
 
@@ -352,7 +352,7 @@ def api_save_config():
     )
 
     cfg.setdefault("deepseek", {})
-    cfg["deepseek"]["model"] = str(data.get("deepseek_model", "deepseek-chat")).strip()
+    cfg["deepseek"]["model"] = str(data.get("deepseek_model", "deepseek-v4-flash")).strip()
 
     save_config(cfg)
     return jsonify({"ok": True, "message": "配置已保存"})

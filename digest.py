@@ -171,7 +171,7 @@ def build_llm_context(item: dict) -> str:
 def generate_full_summary(client: OpenAI, item: dict, config: dict) -> dict:
     context = build_llm_context(item)
     prompt = build_summary_prompt(config, context)
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = config.get("deepseek", {}).get("model", "deepseek-v4-flash")
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
