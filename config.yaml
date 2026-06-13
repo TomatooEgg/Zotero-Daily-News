@@ -1,0 +1,43 @@
+priority_tag: want
+count: 2
+history_days: 14
+item_types:
+  - journalArticle
+  - conferencePaper
+  - preprint
+  - report
+deepseek:
+  base_url: https://api.deepseek.com
+  model: deepseek-chat
+language: zh
+output:
+  summaries_dir: summaries
+  hubs_dir: hubs
+schedule:
+  - hour: 10
+    minute: 0
+  - hour: 18
+    minute: 0
+summary_prompt: |
+  你是学术阅读助手。根据文献元数据，生成中文阅读简报。
+
+  请严格输出 JSON（不要其他文字）：
+  {
+    "briefing": "60-100字头条简报，一句话概括核心贡献",
+    "sections": [
+      {"heading": "核心贡献", "body": "2-4句"},
+      {"heading": "方法亮点", "body": "2-4句"},
+      {"heading": "为何值得读", "body": "1-3句"}
+    ],
+    "key_terms": ["专有名词1", "专有名词2", "专有名词3"]
+  }
+
+  要求：
+  - key_terms 提取 3-5 个论文中的专有名词/方法名/数据集名，便于后续在 PDF 中定位
+  - 不要编造具体实验数字；无摘要时保守表述
+  - 全部使用中文
+
+  文献信息：
+  {context}
+ui:
+  port: 18765
