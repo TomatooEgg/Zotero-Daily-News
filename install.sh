@@ -44,6 +44,27 @@ else
   echo "    未找到，建议: brew install terminal-notifier && bash install.sh"
 fi
 
+ALERTER="$BIN_DIR/alerter"
+echo "==> 安装 alerter（通知「查看总结」按钮）"
+if [[ -x "$ALERTER" ]]; then
+  echo "    已存在"
+elif command -v alerter &>/dev/null; then
+  cp "$(command -v alerter)" "$ALERTER"
+  chmod +x "$ALERTER"
+  echo "    alerter → $ALERTER"
+elif [[ -x "/opt/homebrew/bin/alerter" ]]; then
+  cp "/opt/homebrew/bin/alerter" "$ALERTER"
+  chmod +x "$ALERTER"
+  echo "    alerter → $ALERTER"
+elif [[ -x "/usr/local/bin/alerter" ]]; then
+  cp "/usr/local/bin/alerter" "$ALERTER"
+  chmod +x "$ALERTER"
+  echo "    alerter → $ALERTER"
+else
+  echo "    未找到，建议: brew install vjeantet/tap/alerter && bash install.sh"
+  echo "    （无 alerter 时仍可点击通知正文跳转 HTML）"
+fi
+
 echo "==> 生成并加载 launchd 定时任务"
 cd "$PROJECT_DIR"
 "$VENV/bin/python" -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); ok,m=reload_launchd(c); print(m)"

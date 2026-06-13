@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from config_manager import load_config, resolve_output_dirs
+from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
+
+HISTORY_PATH = SCRIPT_DIR / "history.json"
 
 DATE_RE = re.compile(r"^(\d{8})_([A-Z0-9]+)_(.+)\.md$", re.IGNORECASE)
 BRIEFING_RE = re.compile(r"^>\s*\*\*头条简报\*\*[：:]\s*(.+)$", re.MULTILINE)
@@ -119,3 +122,64 @@ def get_note(note_id: str) -> NoteEntry | None:
         if entry.id == note_id:
             return entry
     return None
+
+
+def _valid_note_id(note_id: str) -> bool:
+    return bool(DATE_RE.match(f"{note_id}.md"))
+
+
+def _delete_files(entry: NoteEntry) -> None:
+    Path(entry.md_path).unlink(missing_ok=True)
+    if entry.hub_path:
+        Path(entry.hub_path).unlink(missing_ok=True)
+
+
+def _sync_history_after_delete(deleted_item_keys: list[str]) -> None:
+    if not deleted_item_keys or not HISTORY_PATH.exists():
+        return
+    remaining_keys = {e.item_key for e in list_notes()}
+    with HISTORY_PATH.open(encoding="utf-8") as f:
+        history = json.load(f)
+    items = history.setdefault("items", {})
+    changed = False
+    for key in deleted_item_keys:
+        if key not in remaining_keys and key in items:
+            del items[key]
+            changed = True
+    if changed:
+        with HISTORY_PATH.open("w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def delete_notes(note_ids: list[str]) -> int:
+    entries_to_delete: list[NoteEntry] = []
+    seen: set[str] = set()
+    for note_id in note_ids:
+        if note_id in seen or not _valid_note_id(note_id):
+            continue
+        seen.add(note_id)
+        entry = get_note(note_id)
+        if entry:
+            entries_to_delete.append(entry)
+    if not entries_to_delete:
+        return 0
+    item_keys = [e.item_key for e in entries_to_delete]
+    for entry in entries_to_delete:
+        _delete_files(entry)
+    _sync_history_after_delete(item_keys)
+    return len(entries_to_delete)
+
+
+def delete_note(note_id: str) -> bool:
+    return delete_notes([note_id]) == 1
+
+
+def delete_notes_by_date(iso_date: str) -> int:
+    try:
+        datetime.strptime(iso_date, "%Y-%m-%d")
+    except ValueError:
+        return -1
+    entries = list_notes(date_filter=iso_date)
+    if not entries:
+        return 0
+    return delete_notes([e.id for e in entries])

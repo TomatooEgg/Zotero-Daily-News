@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zotero 简报</title>
+  <link rel="stylesheet" href="/static/note-view.css">
   <style>
     :root {
       --bg: #f5f5f7; --sidebar: #fff; --card: #fff; --accent: #007aff;
@@ -22,20 +23,67 @@
     .panel.active { display: flex; }
 
     /* 笔记库 */
-    .notes-layout { width: 100%; display: grid; grid-template-columns: 220px 340px 1fr; }
-    .date-sidebar { border-right: 1px solid var(--border); background: var(--sidebar); overflow-y: auto; padding: 12px 8px; }
-    .date-item { padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
+    .notes-layout { width: 100%; display: flex; overflow: hidden; }
+    .date-sidebar-wrap { flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; min-width: 0; background: var(--sidebar); }
+    .date-sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 6px; flex-shrink: 0; }
+    .date-sidebar-title { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .sidebar-toggle { border: none; background: transparent; cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 6px; border-radius: 6px; line-height: 1; }
+    .sidebar-toggle:hover { background: var(--hover); color: var(--text); }
+    .date-sidebar { flex: 1; overflow-y: auto; padding: 0 8px 12px; min-width: 0; }
+    .notes-layout.sidebar-collapsed .date-sidebar-wrap { width: 0 !important; min-width: 0 !important; overflow: hidden; }
+    .notes-layout.sidebar-collapsed .col-resizer[data-resizer="0"] { display: none; }
+    .show-sidebar-btn { display: none; border: none; background: #fff; cursor: pointer; font-size: 12px; color: var(--muted); padding: 6px 8px; border-right: 1px solid var(--border); align-self: stretch; flex-shrink: 0; writing-mode: vertical-rl; text-orientation: mixed; letter-spacing: 1px; }
+    .show-sidebar-btn:hover { background: var(--hover); color: var(--text); }
+    .notes-layout.sidebar-collapsed .show-sidebar-btn { display: block; }
+    .col-resizer { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; position: relative; z-index: 2; transition: background 0.15s; }
+    .col-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background: var(--border); }
+    .col-resizer:hover, .col-resizer.dragging { background: rgba(0, 122, 255, 0.12); }
+    .col-resizer:hover::after, .col-resizer.dragging::after { background: var(--accent); }
+    .note-list-col { flex-shrink: 0; background: #fafafa; display: flex; flex-direction: column; overflow: hidden; min-width: 200px; }
+    .date-item { padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
     .date-item:hover { background: var(--hover); }
     .date-item.active { background: #e8f2ff; color: var(--accent); font-weight: 600; }
-    .date-item .count { float: right; color: var(--muted); font-size: 12px; }
-    .note-list { border-right: 1px solid var(--border); background: #fafafa; overflow-y: auto; }
-    .note-card { padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .date-item-starred .date-label { display: flex; align-items: center; gap: 4px; }
+    .sidebar-divider { height: 1px; background: var(--border); margin: 8px 4px; }
+    .date-item .count { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    .date-item .date-label { flex: 1; min-width: 0; }
+    .date-del { border: none; background: transparent; color: var(--muted); font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px; cursor: pointer; opacity: 0; flex-shrink: 0; }
+    .date-item:hover .date-del { opacity: 1; }
+    .date-del:hover { background: #fee2e2; color: #ff3b30; }
+    .note-list-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff; flex-shrink: 0; flex-wrap: wrap; }
+    .note-list-toolbar .toolbar-info { flex: 1; font-size: 12px; color: var(--muted); min-width: 0; }
+    .note-list-toolbar button { padding: 6px 10px; font-size: 12px; }
+    .note-list { flex: 1; overflow-y: auto; }
+    .note-card { padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; gap: 10px; align-items: center; }
     .note-card:hover { background: #fff; }
     .note-card.active { background: #fff; border-left: 3px solid var(--accent); }
+    .note-card.selected { background: #fff5f5; }
+    .note-card.starred { background: #fffdf5; }
+    .note-card .note-check { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+    .note-card .note-body { flex: 1; min-width: 0; }
+    .note-card .note-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+    .note-card:hover .note-actions, .note-card.starred .note-actions { opacity: 1; }
+    .note-card.starred .note-del { opacity: 0; pointer-events: none; }
+    .note-card.starred:hover .note-del { opacity: 1; pointer-events: auto; }
+    .note-action { border: none; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 5px; border-radius: 6px; }
+    .note-action:hover { background: var(--hover); }
+    .note-star { filter: grayscale(1); opacity: 0.45; }
+    .note-star.active { filter: none; opacity: 1; }
+    .note-card.starred .note-star { filter: none; opacity: 1; }
     .note-card h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
     .note-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .note-detail { overflow-y: auto; padding: 24px 28px 40px; background: #fff; }
-    .note-detail.empty { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .note-detail { flex: 1; min-width: 240px; overflow-y: auto; padding: 0; background: #fff; display: flex; flex-direction: column; }
+    .note-detail.empty { display: flex; align-items: center; justify-content: center; color: var(--muted); padding: 24px; }
+    .note-detail-body { flex: 1; overflow-y: auto; padding: 20px 28px 40px; }
+    .detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px 0; flex-shrink: 0; }
+    .detail-header h1 { margin: 0; font-size: 1.35rem; line-height: 1.35; flex: 1; min-width: 0; }
+    .detail-header-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
+    .detail-toggle { border: none; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; padding: 4px 6px; border-radius: 6px; color: var(--muted); }
+    .detail-toggle:hover { background: var(--hover); color: var(--text); }
+    .notes-layout.detail-expanded .date-sidebar-wrap,
+    .notes-layout.detail-expanded .col-resizer,
+    .notes-layout.detail-expanded .note-list-col { display: none !important; }
+    .notes-layout.detail-expanded .note-detail { width: 100%; max-width: none; }
     .note-detail .brief { background: #f0f7ff; border-left: 4px solid var(--accent); padding: 12px 14px; border-radius: 8px; margin-bottom: 20px; line-height: 1.55; font-size: 14px; }
     .note-detail .meta { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
     .note-detail .content { line-height: 1.65; font-size: 14px; }
@@ -54,6 +102,7 @@
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
     .row-3 { grid-template-columns: 1fr 1fr 1fr; }
     button { border: none; border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-secondary { background: #e8e8ed; color: var(--text); }
     .btn-danger { background: #ff3b30; color: #fff; }
@@ -86,8 +135,20 @@
   <div class="layout">
     <!-- 笔记库 -->
     <div id="panel-notes" class="panel active notes-layout">
-      <div class="date-sidebar" id="date_sidebar"></div>
-      <div class="note-list" id="note_list"></div>
+      <div class="date-sidebar-wrap" id="date_sidebar_wrap">
+        <div class="date-sidebar-head">
+          <span class="date-sidebar-title">目录</span>
+          <button class="sidebar-toggle" id="hide_date_sidebar" title="隐藏目录" onclick="toggleDateSidebar(true)">◀</button>
+        </div>
+        <div class="date-sidebar" id="date_sidebar"></div>
+      </div>
+      <div class="col-resizer" data-resizer="0" title="拖动调整宽度"></div>
+      <button class="show-sidebar-btn" id="show_date_sidebar" title="显示目录" onclick="toggleDateSidebar(false)">目录 ▶</button>
+      <div class="note-list-col">
+        <div class="note-list-toolbar" id="note_list_toolbar"></div>
+        <div class="note-list" id="note_list"></div>
+      </div>
+      <div class="col-resizer" data-resizer="1" title="拖动调整宽度"></div>
       <div class="note-detail empty" id="note_detail">← 选择日期和笔记查看详情</div>
     </div>
 
@@ -119,11 +180,27 @@
           <div class="actions"><button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button></div>
         </div>
         <div class="card">
-          <h2>详细总结 Prompt</h2>
+          <h2>头条简报 Prompt</h2>
           <label>DeepSeek 模型</label>
           <input id="deepseek_model" value="{{ config.deepseek_model }}" style="margin-bottom:12px">
           <label>Prompt（须含 <code>{context}</code>，输出 JSON）</label>
           <textarea id="summary_prompt">{{ config.summary_prompt }}</textarea>
+        </div>
+        <div class="card">
+          <h2>PDF 深度解读</h2>
+          <div class="row">
+            <div>
+              <label><input type="checkbox" id="pdf_summary_enabled" {% if config.pdf_summary_enabled %}checked{% endif %}> 启用全文深度解读</label>
+              <div class="hint">点击按钮后按需读取 PDF 生成，推送时不预生成</div>
+            </div>
+            <div>
+              <label>PDF 最大字符数</label>
+              <input id="pdf_summary_max_chars" type="number" min="5000" max="200000" value="{{ config.pdf_summary_max_chars }}">
+              <div class="hint">超长 PDF 会自动截断</div>
+            </div>
+          </div>
+          <label style="margin-top:12px">PDF 解读 Prompt（须含 <code>{context}</code>、<code>{pdf_text}</code>、<code>{pdf_source}</code>）</label>
+          <textarea id="pdf_summary_prompt">{{ config.pdf_summary_prompt }}</textarea>
         </div>
         <div class="card">
           <div class="actions">
@@ -158,11 +235,20 @@
 
   <div id="toast"></div>
 
+  <script src="/static/note-view.js"></script>
   <script>
     const initialSchedule = {{ config.schedule | tojson }};
     let allGroups = [];
     let selectedDate = null;
     let selectedNoteId = null;
+    let currentNote = null;
+    let selectionMode = false;
+    let selectedIds = new Set();
+    let starredIds = new Set();
+    const STARRED_KEY = 'zotero-digest-starred';
+    let dateSidebarHidden = false;
+    let detailExpanded = false;
+    const SIDEBAR_HIDDEN_KEY = 'zotero-digest-sidebar-hidden';
 
     // Tab 切换
     document.querySelectorAll('.tab').forEach(tab => {
@@ -183,15 +269,86 @@
       setTimeout(() => el.style.display = 'none', 3000);
     }
 
+    function loadStarred() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STARRED_KEY));
+        if (Array.isArray(saved)) starredIds = new Set(saved);
+      } catch (_) {}
+    }
+
+    function saveStarred() {
+      localStorage.setItem(STARRED_KEY, JSON.stringify([...starredIds]));
+    }
+
+    function toggleStar(id) {
+      if (starredIds.has(id)) starredIds.delete(id);
+      else starredIds.add(id);
+      saveStarred();
+      renderDateSidebar();
+      renderNoteList();
+      updateDetailStarButton();
+    }
+
+    function updateDetailStarButton() {
+      if (!currentNote) return;
+      const btn = document.querySelector('.detail-header-actions .note-star');
+      if (!btn) return;
+      const starred = starredIds.has(currentNote.id);
+      btn.classList.toggle('active', starred);
+      btn.title = starred ? '取消星标' : '星标';
+    }
+
+    function toggleStarFromDetail() {
+      if (!currentNote) return;
+      toggleStar(currentNote.id);
+    }
+
+    function loadSidebarState() {
+      dateSidebarHidden = localStorage.getItem(SIDEBAR_HIDDEN_KEY) === '1';
+      applySidebarState();
+    }
+
+    function applySidebarState() {
+      document.getElementById('panel-notes').classList.toggle('sidebar-collapsed', dateSidebarHidden);
+      if (!dateSidebarHidden) applyColumnWidths();
+    }
+
+    function toggleDateSidebar(hide) {
+      dateSidebarHidden = hide !== undefined ? hide : !dateSidebarHidden;
+      localStorage.setItem(SIDEBAR_HIDDEN_KEY, dateSidebarHidden ? '1' : '0');
+      applySidebarState();
+    }
+
+    function toggleDetailExpand() {
+      detailExpanded = !detailExpanded;
+      document.getElementById('panel-notes').classList.toggle('detail-expanded', detailExpanded);
+      const btn = document.querySelector('.detail-toggle');
+      if (btn) {
+        btn.textContent = detailExpanded ? '⤡' : '⛶';
+        btn.title = detailExpanded ? '还原' : '放大至全窗口';
+      }
+    }
+
     async function loadNotes() {
       const res = await fetch('/api/notes');
       const data = await res.json();
       allGroups = data.groups || [];
+      const allIds = new Set();
+      allGroups.forEach(g => g.notes.forEach(n => allIds.add(n.id)));
+      [...selectedIds].forEach(id => { if (!allIds.has(id)) selectedIds.delete(id); });
+      [...starredIds].forEach(id => { if (!allIds.has(id)) starredIds.delete(id); });
+      saveStarred();
       renderDateSidebar();
       if (!selectedDate && allGroups.length) {
         selectedDate = allGroups[0].date;
       }
       renderNoteList();
+    }
+
+    function starredCount() {
+      let count = 0;
+      allGroups.forEach(g => g.notes.forEach(n => { if (starredIds.has(n.id)) count++; }));
+      return count;
     }
 
     function renderDateSidebar() {
@@ -200,41 +357,132 @@
         el.innerHTML = '<div class="hint" style="padding:12px">暂无笔记</div>';
         return;
       }
-      el.innerHTML = '<div class="date-item' + (!selectedDate ? ' active' : '') + '" onclick="selectDate(null)">全部 <span class="count">' +
-        allGroups.reduce((s,g) => s + g.notes.length, 0) + '</span></div>';
+      const total = allGroups.reduce((s,g) => s + g.notes.length, 0);
+      const starred = starredCount();
+      el.innerHTML = `<div class="date-item${selectedDate === null ? ' active' : ''}" onclick="selectDate(null)">
+        <span class="date-label">全部</span><span class="count">${total}</span></div>
+        <div class="date-item date-item-starred${selectedDate === '__starred__' ? ' active' : ''}" onclick="selectDate('__starred__')">
+          <span class="date-label">🌟 星标</span><span class="count">${starred}</span></div>
+        <div class="sidebar-divider"></div>`;
       allGroups.forEach(g => {
         el.innerHTML += `<div class="date-item${selectedDate === g.date ? ' active' : ''}" onclick="selectDate('${g.date}')">
-          ${g.date_label.split(' ')[0]}<span class="count">${g.notes.length}</span></div>`;
+          <span class="date-label">${esc(g.date_label.split(' ')[0])}</span>
+          <span class="count">${g.notes.length}</span>
+          <button class="date-del" title="删除该日全部笔记" onclick="event.stopPropagation(); deleteByDate('${g.date}')">×</button>
+        </div>`;
       });
     }
 
     function selectDate(date) {
       selectedDate = date;
       selectedNoteId = null;
+      currentNote = null;
+      selectedIds.clear();
       renderDateSidebar();
       renderNoteList();
       document.getElementById('note_detail').className = 'note-detail empty';
       document.getElementById('note_detail').innerHTML = '← 选择笔记查看详情';
     }
 
-    function renderNoteList() {
-      const el = document.getElementById('note_list');
-      let notes = [];
+    function visibleNotes() {
+      if (selectedDate === '__starred__') {
+        const notes = [];
+        allGroups.forEach(g => g.notes.forEach(n => {
+          if (starredIds.has(n.id)) notes.push(n);
+        }));
+        return notes;
+      }
       if (selectedDate) {
         const g = allGroups.find(x => x.date === selectedDate);
-        notes = g ? g.notes : [];
-      } else {
-        allGroups.forEach(g => notes.push(...g.notes));
+        return g ? g.notes : [];
       }
-      if (!notes.length) {
-        el.innerHTML = '<div class="hint" style="padding:16px">该日期无笔记</div>';
+      const notes = [];
+      allGroups.forEach(g => notes.push(...g.notes));
+      return notes;
+    }
+
+    function renderNoteListToolbar(noteCount) {
+      const el = document.getElementById('note_list_toolbar');
+      if (!noteCount) {
+        el.innerHTML = '';
         return;
       }
-      el.innerHTML = notes.map(n => `
-        <div class="note-card${selectedNoteId === n.id ? ' active' : ''}" onclick="openNote('${n.id}')">
-          <h3>${esc(n.title)}</h3>
-          <p>${esc(n.briefing || '（无简报）')}</p>
-        </div>`).join('');
+      if (!selectionMode) {
+        el.innerHTML = `<button class="btn-ghost" onclick="enterSelectionMode()">多选</button>`;
+        return;
+      }
+      const allSelected = noteCount > 0 && selectedIds.size === noteCount;
+      el.innerHTML = `
+        <input type="checkbox" ${allSelected ? 'checked' : ''} onchange="toggleSelectAll(this.checked)" title="全选">
+        <span class="toolbar-info">已选 ${selectedIds.size} / ${noteCount}</span>
+        <button class="btn-danger" onclick="deleteSelected()" ${selectedIds.size ? '' : 'disabled'}>删除选中</button>
+        <button class="btn-ghost" onclick="exitSelectionMode()">取消</button>`;
+    }
+
+    function enterSelectionMode() {
+      selectionMode = true;
+      selectedIds.clear();
+      renderNoteList();
+    }
+
+    function exitSelectionMode() {
+      selectionMode = false;
+      selectedIds.clear();
+      renderNoteList();
+    }
+
+    function toggleSelectAll(checked) {
+      const notes = visibleNotes();
+      selectedIds.clear();
+      if (checked) notes.forEach(n => selectedIds.add(n.id));
+      renderNoteList();
+    }
+
+    function toggleNoteSelection(id, checked) {
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      renderNoteList();
+    }
+
+    function handleNoteCardClick(id) {
+      if (selectionMode) {
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        renderNoteList();
+        return;
+      }
+      openNote(id);
+    }
+
+    function renderNoteList() {
+      const el = document.getElementById('note_list');
+      const notes = visibleNotes();
+      renderNoteListToolbar(notes.length);
+      if (!notes.length) {
+        const emptyMsg = selectedDate === '__starred__' ? '暂无星标笔记' : '该日期无笔记';
+        el.innerHTML = `<div class="hint" style="padding:16px">${emptyMsg}</div>`;
+        return;
+      }
+      el.innerHTML = notes.map(n => {
+        const starred = starredIds.has(n.id);
+        return `
+        <div class="note-card${selectedNoteId === n.id && !selectionMode ? ' active' : ''}${selectedIds.has(n.id) ? ' selected' : ''}${starred ? ' starred' : ''}"
+             onclick="handleNoteCardClick('${n.id}')">
+          ${selectionMode ? `<input type="checkbox" class="note-check" ${selectedIds.has(n.id) ? 'checked' : ''}
+            onclick="event.stopPropagation(); toggleNoteSelection('${n.id}', this.checked)">` : ''}
+          <div class="note-body">
+            <h3>${esc(n.title)}</h3>
+            <p>${esc(n.briefing || '（无简报）')}</p>
+          </div>
+          ${!selectionMode ? `
+          <div class="note-actions">
+            <button class="note-action note-star${starred ? ' active' : ''}" title="${starred ? '取消星标' : '星标'}"
+              onclick="event.stopPropagation(); toggleStar('${n.id}')">🌟</button>
+            <button class="note-action note-del" title="删除"
+              onclick="event.stopPropagation(); deleteNoteFromList('${n.id}')">🗑️</button>
+          </div>` : ''}
+        </div>`;
+      }).join('');
     }
 
     function esc(s) {
@@ -247,16 +495,103 @@
       const res = await fetch('/api/notes/' + encodeURIComponent(id));
       const n = await res.json();
       if (n.error) { toast(n.error); return; }
+      currentNote = n;
+      const starred = starredIds.has(n.id);
       const el = document.getElementById('note_detail');
       el.className = 'note-detail';
       el.innerHTML = `
-        <h1 style="margin:0 0 12px;font-size:1.35rem;line-height:1.35">${esc(n.title)}</h1>
-        <div class="brief">${esc(n.briefing)}</div>
-        <div class="meta">
-          <a href="${n.zotero_url}"><button class="btn-secondary">Zotero 原文</button></a>
-          ${n.hub_path ? `<a href="/hub/${encodeURIComponent(n.id)}" target="_blank"><button class="btn-secondary">HTML 中转页</button></a>` : ''}
+        <div class="detail-header">
+          <h1>${esc(n.title)}</h1>
+          <div class="detail-header-actions">
+            <button class="note-action note-star${starred ? ' active' : ''}" title="${starred ? '取消星标' : '星标'}"
+              onclick="toggleStarFromDetail()">🌟</button>
+            <button class="note-action note-del" title="删除" onclick="deleteCurrentNote()">🗑️</button>
+            <button class="detail-toggle" title="${detailExpanded ? '还原' : '放大至全窗口'}" onclick="toggleDetailExpand()">${detailExpanded ? '⤡' : '⛶'}</button>
+          </div>
         </div>
-        <div class="content">${n.html}</div>`;
+        <div class="note-detail-body" id="note_view_container">加载中…</div>`;
+      const viewRes = await fetch('/api/notes/' + encodeURIComponent(id) + '/view');
+      if (!viewRes.ok) {
+        document.getElementById('note_view_container').textContent = '加载笔记视图失败';
+        return;
+      }
+      document.getElementById('note_view_container').innerHTML = await viewRes.text();
+      const root = document.getElementById('note-view-root');
+      if (root && window.initNoteView) initNoteView(root);
+    }
+
+    async function deleteCurrentNote() {
+      if (!currentNote) return;
+      await deleteNote(currentNote.id);
+    }
+
+    function confirmDelete(count) {
+      return confirm(`是否要删除 ${count} 条推送笔记？\n\n此操作不可恢复。`);
+    }
+
+    async function deleteNoteFromList(id) {
+      await deleteNote(id);
+    }
+
+    async function deleteNote(id) {
+      if (!confirmDelete(1)) return;
+      const res = await fetch('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '删除失败'); return; }
+      toast('已删除');
+      selectedIds.delete(id);
+      starredIds.delete(id);
+      saveStarred();
+      if (selectedNoteId === id) {
+        selectedNoteId = null;
+        currentNote = null;
+        document.getElementById('note_detail').className = 'note-detail empty';
+        document.getElementById('note_detail').innerHTML = '← 选择笔记查看详情';
+      }
+      await loadNotes();
+    }
+
+    async function deleteSelected() {
+      if (!selectedIds.size) return;
+      const count = selectedIds.size;
+      if (!confirmDelete(count)) return;
+      const res = await fetch('/api/notes', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '删除失败'); return; }
+      toast(`已删除 ${data.deleted_count} 篇笔记`);
+      if (selectedNoteId && selectedIds.has(selectedNoteId)) {
+        selectedNoteId = null;
+        currentNote = null;
+        document.getElementById('note_detail').className = 'note-detail empty';
+        document.getElementById('note_detail').innerHTML = '← 选择笔记查看详情';
+      }
+      selectedIds.clear();
+      selectionMode = false;
+      await loadNotes();
+    }
+
+    async function deleteByDate(date) {
+      const g = allGroups.find(x => x.date === date);
+      if (!g) return;
+      if (!confirmDelete(g.notes.length)) return;
+      const res = await fetch('/api/notes?date=' + encodeURIComponent(date), { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '删除失败'); return; }
+      toast(`已删除 ${data.deleted_count} 篇笔记`);
+      selectedIds.clear();
+      selectionMode = false;
+      if (selectedDate === date) {
+        selectedDate = null;
+        selectedNoteId = null;
+        currentNote = null;
+        document.getElementById('note_detail').className = 'note-detail empty';
+        document.getElementById('note_detail').innerHTML = '← 选择笔记查看详情';
+      }
+      await loadNotes();
     }
 
     // 设置
@@ -289,6 +624,9 @@
         hubs_dir: document.getElementById('hubs_dir').value,
         schedule: initialSchedule,
         summary_prompt: document.getElementById('summary_prompt').value,
+        pdf_summary_enabled: document.getElementById('pdf_summary_enabled').checked,
+        pdf_summary_max_chars: +document.getElementById('pdf_summary_max_chars').value,
+        pdf_summary_prompt: document.getElementById('pdf_summary_prompt').value,
         deepseek_model: document.getElementById('deepseek_model').value,
       };
     }
@@ -310,7 +648,13 @@
       toast(force ? '强制推送中…' : '推送中…');
       const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ force }) });
       const data = await res.json();
-      toast(data.ok ? '推送完成' : '推送失败');
+      if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
+      if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
+      let msg = data.ok ? '推送完成' : '推送失败';
+      if (data.ok && data.notifications_failed > 0) {
+        msg = '推送完成，但部分通知未弹出，请查看日志';
+      }
+      toast(msg);
       if (data.ok) loadNotes();
       refreshStatus();
     }
@@ -318,7 +662,13 @@
     async function testNotify() {
       const res = await fetch('/api/test-notify', { method: 'POST' });
       const data = await res.json();
-      toast(data.ok ? '测试通知已发送' : '通知失败');
+      if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
+      if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
+      let msg = data.ok ? '测试通知已发送' : '通知失败';
+      if (data.ok && data.notifications_failed > 0) {
+        msg = '测试通知未弹出，请查看日志';
+      }
+      toast(msg);
     }
 
     async function refreshStatus() {
@@ -328,7 +678,96 @@
       document.getElementById('stderr_log').textContent = data.stderr;
     }
 
+    async function refreshStatus() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      document.getElementById('stdout_log').textContent = data.stdout;
+      document.getElementById('stderr_log').textContent = data.stderr;
+    }
+
+    const COLUMN_WIDTHS_KEY = 'zotero-digest-column-widths';
+    const DEFAULT_COLUMN_WIDTHS = [220, 340];
+    const MIN_COLUMN_WIDTHS = [120, 200];
+    const MIN_DETAIL_WIDTH = 240;
+    const RESIZER_WIDTH = 5;
+
+    let columnWidths = [...DEFAULT_COLUMN_WIDTHS];
+
+    function loadColumnWidths() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY));
+        if (Array.isArray(saved) && saved.length === 2) {
+          columnWidths = saved.map((w, i) => Math.max(MIN_COLUMN_WIDTHS[i], +w || DEFAULT_COLUMN_WIDTHS[i]));
+        }
+      } catch (_) {}
+    }
+
+    function clampColumnWidths(widths, layoutWidth) {
+      const resizers = RESIZER_WIDTH * 2;
+      widths[0] = Math.max(MIN_COLUMN_WIDTHS[0], widths[0]);
+      widths[1] = Math.max(MIN_COLUMN_WIDTHS[1], widths[1]);
+      const maxList = layoutWidth - widths[0] - MIN_DETAIL_WIDTH - resizers;
+      widths[1] = Math.min(widths[1], maxList);
+      const maxDate = layoutWidth - widths[1] - MIN_DETAIL_WIDTH - resizers;
+      widths[0] = Math.min(widths[0], maxDate);
+      return widths;
+    }
+
+    function applyColumnWidths() {
+      const layout = document.getElementById('panel-notes');
+      const dateSidebarWrap = document.getElementById('date_sidebar_wrap');
+      const noteListCol = layout.querySelector('.note-list-col');
+      if (dateSidebarHidden) return;
+      columnWidths = clampColumnWidths([...columnWidths], layout.clientWidth);
+      dateSidebarWrap.style.width = columnWidths[0] + 'px';
+      noteListCol.style.width = columnWidths[1] + 'px';
+    }
+
+    function saveColumnWidths() {
+      localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths));
+    }
+
+    function initColumnResizers() {
+      const layout = document.getElementById('panel-notes');
+      loadColumnWidths();
+      applyColumnWidths();
+      window.addEventListener('resize', applyColumnWidths);
+
+      layout.querySelectorAll('.col-resizer').forEach(resizer => {
+        resizer.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const index = +resizer.dataset.resizer;
+          const startX = e.clientX;
+          const startWidths = [...columnWidths];
+          resizer.classList.add('dragging');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+
+          function onMove(ev) {
+            const dx = ev.clientX - startX;
+            columnWidths[index] = startWidths[index] + dx;
+            applyColumnWidths();
+          }
+
+          function onUp() {
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            saveColumnWidths();
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+          }
+
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+      });
+    }
+
     renderSchedule();
+    loadStarred();
+    loadSidebarState();
+    initColumnResizers();
     loadNotes();
   </script>
 </body>

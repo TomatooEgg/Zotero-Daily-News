@@ -45,6 +45,14 @@ cat > "$CONTENTS/Info.plist" << PLIST
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><false/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>com.TomatooEgg.zotero-digest</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>zotero-digest</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

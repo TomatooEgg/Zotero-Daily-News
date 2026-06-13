@@ -31,6 +31,31 @@ DEFAULT_PROMPT = """你是学术阅读助手。根据文献元数据，生成中
 文献信息：
 {context}"""
 
+DEFAULT_PDF_PROMPT = """你是学术阅读助手。请根据文献元数据与 PDF 正文，生成深度中文解读。
+
+请严格输出 JSON（不要其他文字）：
+{{
+  "sections": [
+    {{"heading": "研究背景与问题", "body": "3-5句"}},
+    {{"heading": "核心方法", "body": "4-6句，说明关键思路与技术细节"}},
+    {{"heading": "主要发现", "body": "4-6句，引用论文中的实验设置与结果"}},
+    {{"heading": "局限与启示", "body": "2-4句"}}
+  ],
+  "key_terms": ["专有名词1", "专有名词2", "专有名词3"]
+}}
+
+要求：
+- 基于 PDF 正文解读，可引用具体方法、实验设置、数值结果
+- 若 PDF 文本不完整或被截断，在相应 section 中如实说明
+- key_terms 提取 5-8 个论文中的专有名词/方法名/数据集名
+- 全部使用中文
+
+文献元数据：
+{context}
+
+PDF 正文（来源：{pdf_source}）：
+{pdf_text}"""
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "priority_tag": "want",
     "count": 2,
@@ -47,6 +72,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         {"hour": 18, "minute": 0},
     ],
     "summary_prompt": DEFAULT_PROMPT,
+    "pdf_summary": {
+        "enabled": True,
+        "max_chars": 80000,
+    },
+    "pdf_summary_prompt": DEFAULT_PDF_PROMPT,
     "ui": {"port": 18765},
 }
 
@@ -62,10 +92,14 @@ def load_config() -> dict[str, Any]:
         merged["output"] = {**DEFAULT_CONFIG["output"], **(data.get("output") or {})}
     if "deepseek" in data:
         merged["deepseek"] = {**DEFAULT_CONFIG["deepseek"], **(data.get("deepseek") or {})}
+    if "pdf_summary" in data:
+        merged["pdf_summary"] = {**DEFAULT_CONFIG["pdf_summary"], **(data.get("pdf_summary") or {})}
     if "schedule" not in merged or not merged["schedule"]:
         merged["schedule"] = DEFAULT_CONFIG["schedule"]
     if not merged.get("summary_prompt"):
         merged["summary_prompt"] = DEFAULT_PROMPT
+    if not merged.get("pdf_summary_prompt"):
+        merged["pdf_summary_prompt"] = DEFAULT_PDF_PROMPT
     return merged
 
 
@@ -92,3 +126,17 @@ def resolve_output_dirs(config: dict[str, Any]) -> tuple[Path, Path]:
 def build_summary_prompt(config: dict[str, Any], context: str) -> str:
     template = config.get("summary_prompt") or DEFAULT_PROMPT
     return template.replace("{context}", context)
+
+
+def build_pdf_summary_prompt(
+    config: dict[str, Any],
+    context: str,
+    pdf_text: str,
+    pdf_source: str,
+) -> str:
+    template = config.get("pdf_summary_prompt") or DEFAULT_PDF_PROMPT
+    return (
+        template.replace("{context}", context)
+        .replace("{pdf_text}", pdf_text)
+        .replace("{pdf_source}", pdf_source)
+    )
