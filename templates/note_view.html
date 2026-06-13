@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · 文献简报</title>
+  <link rel="stylesheet" href="{{ static_base }}/note-view.css">
+</head>
+<body class="note-page">
+  <div class="card">
+    <h1>{{ title }}</h1>
+    {% if viewer == 'standalone' %}
+    <div class="page-actions">
+      <a href="/">返回应用</a>
+    </div>
+    {% endif %}
+    <div
+      id="note-view-root"
+      class="note-view-root"
+      data-autoinit="1"
+      data-viewer="{{ viewer }}"
+      data-api-base="{{ api_base }}"
+      data-note='{{ note_data | tojson }}'
+    >
+      {% include "note_view_body.html" %}
+    </div>
+  </div>
+  <script src="{{ static_base }}/note-view.js"></script>
+  <script>initNoteView(document.getElementById('note-view-root'));</script>
+</body>
+</html>

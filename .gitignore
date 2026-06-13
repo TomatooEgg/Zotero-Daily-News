@@ -28,8 +28,9 @@ build/
 .AppleDouble
 .LSOverride
 
-# 编辑器
+# 编辑器 / IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *~

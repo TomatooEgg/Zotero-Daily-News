@@ -1,0 +1,14 @@
+<div class="brief">{{ briefing }}</div>
+<div class="meta">
+  <a class="btn-secondary" href="{{ zotero_url }}" data-external-link data-role="zotero">Zotero 条目</a>
+  {% if show_pdf %}
+  <a class="btn-secondary" href="{{ pdf_url }}" data-external-link data-role="pdf">PDF</a>
+  {% endif %}
+  {% if show_reveal %}
+  <button type="button" class="btn-action btn-secondary" data-action="reveal">在访达中打开</button>
+  {% endif %}
+  {% if show_digest_app %}
+  <a class="btn-secondary" href="{{ digest_app_url }}" data-external-link data-role="digest-app">简报 App</a>
+  {% endif %}
+</div>
+<div class="content">{{ html_body | safe }}</div>

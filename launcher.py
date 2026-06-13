@@ -6,8 +6,10 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from typing import Any
 
 from config_manager import load_config
+from url_handler import deeplink_from_argv, install_macos_url_handler, note_path
 
 PORT = int((load_config().get("ui") or {}).get("port", 18765))
 
@@ -33,7 +35,18 @@ def _wait_server(url: str, timeout: float = 15.0) -> bool:
 def main() -> None:
     from app import app
 
-    url = f"http://127.0.0.1:{PORT}"
+    base_url = f"http://127.0.0.1:{PORT}"
+    state: dict[str, Any] = {"window": None, "pending_note_id": deeplink_from_argv()}
+
+    def open_note(note_id: str) -> None:
+        state["pending_note_id"] = note_id
+        window = state.get("window")
+        if window is None:
+            return
+        window.load_url(f"{base_url}{note_path(note_id)}")
+        window.show()
+
+    install_macos_url_handler(open_note)
 
     def run_flask() -> None:
         app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
@@ -41,28 +54,33 @@ def main() -> None:
     if _port_free(PORT):
         thread = threading.Thread(target=run_flask, daemon=True)
         thread.start()
-        if not _wait_server(url):
+        if not _wait_server(base_url):
             raise SystemExit("界面服务启动超时")
     else:
-        print(f"复用已在运行的服务: {url}")
+        print(f"复用已在运行的服务: {base_url}")
+
+    initial_path = "/"
+    if state["pending_note_id"]:
+        initial_path = note_path(state["pending_note_id"])
 
     try:
         import webview
 
-        webview.create_window(
+        window = webview.create_window(
             "Zotero 简报",
-            url,
+            f"{base_url}{initial_path}",
             width=1180,
             height=820,
             min_size=(900, 600),
             text_select=True,
         )
+        state["window"] = window
         webview.start()
     except ImportError:
         import webbrowser
 
-        webbrowser.open(url)
-        print(f"已打开浏览器: {url}")
+        webbrowser.open(f"{base_url}{initial_path}")
+        print(f"已打开浏览器: {base_url}{initial_path}")
         print("安装 pywebview 可获得原生窗口: pip install pywebview")
         try:
             while True:

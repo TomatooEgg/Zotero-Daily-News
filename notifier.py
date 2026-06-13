@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
+LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
+NOTIFY_PREFIX = "@@NOTIFY@@"
+SUMMARY_ACTION = "查看总结"
+OPEN_ON_ACTIONS = {SUMMARY_ACTION, "@CONTENTCLICKED", "@ACTIONCLICKED"}
 
 # 常见 terminal-notifier  Mach-O 路径
 TN_CANDIDATES = [
@@ -63,6 +68,86 @@ def _resolve_terminal_notifier_from_path(path: Path) -> Path | None:
     except OSError:
         pass
     return None
+
+
+def _resolve_alerter() -> Path | None:
+    for candidate in (LOCAL_ALERTER, Path("/opt/homebrew/bin/alerter"), Path("/usr/local/bin/alerter")):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    found = shutil.which("alerter")
+    return Path(found) if found else None
+
+
+def emit_notify_payload(
+    title: str,
+    message: str,
+    subtitle: str = "",
+    hub_path: Path | None = None,
+) -> str:
+    payload: dict[str, str] = {
+        "title": title,
+        "message": message,
+        "subtitle": subtitle,
+    }
+    if hub_path:
+        payload["hub_path"] = str(hub_path.resolve())
+    return NOTIFY_PREFIX + json.dumps(payload, ensure_ascii=False)
+
+
+def parse_notify_stdout(stdout: str) -> list[dict[str, str]]:
+    specs: list[dict[str, str]] = []
+    for line in stdout.splitlines():
+        if not line.startswith(NOTIFY_PREFIX):
+            continue
+        try:
+            data = json.loads(line[len(NOTIFY_PREFIX) :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data.get("title") and data.get("message") is not None:
+            specs.append(data)
+    return specs
+
+
+def _notify_alerter(
+    binary: Path,
+    title: str,
+    message: str,
+    subtitle: str,
+    hub_path: Path,
+    verbose: bool,
+) -> bool:
+    group = f"zotero-digest-{hub_path.stem}"
+    cmd = [
+        str(binary),
+        "--title",
+        title,
+        "--message",
+        message,
+        "--actions",
+        SUMMARY_ACTION,
+        "--close-label",
+        "关闭",
+        "--timeout",
+        "0",
+        "--group",
+        group,
+    ]
+    if subtitle:
+        cmd.extend(["--subtitle", subtitle])
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    action = (result.stdout or "").strip()
+    if verbose:
+        print(f"[alerter] exit={result.returncode} action={action}", file=sys.stderr)
+        if result.stderr.strip():
+            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
+    if result.returncode != 0:
+        if verbose:
+            print("[alerter] 失败，尝试降级到 terminal-notifier", file=sys.stderr)
+        return False
+    if hub_path.exists() and action in OPEN_ON_ACTIONS:
+        subprocess.run(["open", str(hub_path.resolve())], check=False)
+    return True
 
 
 def _escape_applescript(text: str) -> str:
@@ -164,17 +249,23 @@ def notify_macos(
             print(f"  副标题: {subtitle}")
         print(f"  {message}")
         if hub_path:
-            print(f"  点击打开: {hub_path.resolve().as_uri()}")
+            print(f"  按钮「{SUMMARY_ACTION}」→ {hub_path.resolve().as_uri()}")
         return True
 
     hub_uri = hub_path.resolve().as_uri() if hub_path and hub_path.exists() else None
     sender = detect_sender()
+    alerter = _resolve_alerter()
     binary = _resolve_terminal_notifier()
 
     if verbose:
-        print(f"[notify] sender={sender} binary={binary}", file=sys.stderr)
+        print(f"[notify] sender={sender} alerter={alerter} binary={binary}", file=sys.stderr)
 
-    # 1) terminal-notifier（优先带点击跳转）
+    # 1) alerter（带「查看总结」操作按钮）
+    if alerter and hub_path and hub_path.exists():
+        if _notify_alerter(alerter, title, message, subtitle, hub_path, verbose):
+            return True
+
+    # 2) terminal-notifier（点击通知正文跳转）
     if binary:
         if _notify_terminal_notifier(binary, title, message, subtitle, hub_uri, sender, verbose):
             return True
@@ -183,18 +274,19 @@ def notify_macos(
                 subprocess.run(["open", str(hub_path.resolve())], check=False)
             return True
 
-    # 2) osascript（需在 系统设置→通知→脚本编辑器 或 终端 中允许）
+    # 3) osascript（需在 系统设置→通知→脚本编辑器 或 终端 中允许）
     if _notify_osascript(title, message, subtitle, verbose):
         if hub_path and hub_path.exists():
             subprocess.run(["open", str(hub_path.resolve())], check=False)
         return True
 
-    # 3) 兜底：声音 + 打开页面
+    # 4) 兜底：声音 + 打开页面
     _fallback_alert(hub_path, verbose)
     print(
         "\n未能弹出系统通知。请在「系统设置 → 通知」中开启以下任一应用的通知：\n"
         "  • 终端 (Terminal)\n"
         "  • 脚本编辑器 (Script Editor)\n"
+        "  • alerter（带「查看总结」按钮，推荐: brew install vjeantet/tap/alerter）\n"
         "  • terminal-notifier（若列表中有）\n"
         "然后重新运行: run.sh --test-notify --verbose-notify\n",
         file=sys.stderr,
@@ -204,7 +296,9 @@ def notify_macos(
 
 def diagnose() -> None:
     print("=== Zotero 简报 通知诊断 ===")
+    alerter = _resolve_alerter()
     binary = _resolve_terminal_notifier()
+    print(f"alerter: {alerter or '未找到（建议 brew install vjeantet/tap/alerter）'}")
     print(f"terminal-notifier: {binary or '未找到'}")
     print(f"sender: {detect_sender()}")
     print(f"TERM_PROGRAM: {os.environ.get('TERM_PROGRAM', '(无)')}")

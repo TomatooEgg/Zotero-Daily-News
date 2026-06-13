@@ -22,7 +22,7 @@ from config_manager import (
     resolve_output_dirs,
 )
 from notifier import diagnose as notify_diagnose
-from notifier import notify_macos
+from notifier import emit_notify_payload, notify_macos
 from summary_io import parse_llm_summary, write_outputs
 from zotero_links import clean_terms, get_pdf_attachment, resolve_term_links
 
@@ -191,7 +191,48 @@ def metadata_only_summary(item: dict) -> dict:
     }
 
 
-def run(dry_run: bool = False, skip_llm: bool = False, force: bool = False) -> int:
+def emit_notification(
+    title: str,
+    message: str,
+    subtitle: str = "",
+    hub_path: Path | None = None,
+    *,
+    dry_run: bool = False,
+    no_notify: bool = False,
+) -> None:
+    if dry_run:
+        notify_macos(
+            title=title,
+            message=message,
+            subtitle=subtitle,
+            hub_path=hub_path,
+            dry_run=True,
+        )
+        return
+    if no_notify:
+        print(
+            emit_notify_payload(
+                title=title,
+                message=message,
+                subtitle=subtitle,
+                hub_path=hub_path,
+            )
+        )
+        return
+    notify_macos(
+        title=title,
+        message=message,
+        subtitle=subtitle,
+        hub_path=hub_path,
+    )
+
+
+def run(
+    dry_run: bool = False,
+    skip_llm: bool = False,
+    force: bool = False,
+    no_notify: bool = False,
+) -> int:
     load_dotenv(ENV_PATH)
     config = load_config()
     history = load_history()
@@ -211,7 +252,7 @@ def run(dry_run: bool = False, skip_llm: bool = False, force: bool = False) -> i
         msg = "没有可推送的文献（可能已全部在近期推送过，或库中无匹配条目）"
         print(msg)
         if not dry_run:
-            notify_macos("📚 Zotero 简报", msg)
+            emit_notification("📚 Zotero 简报", msg, no_notify=no_notify)
         return 0
 
     client = None
@@ -232,6 +273,9 @@ def run(dry_run: bool = False, skip_llm: bool = False, force: bool = False) -> i
         title = data.get("title", "无标题")
         subtitle = format_authors(data.get("creators", []))
 
+        pdf = get_pdf_attachment(zot, item["key"])
+        pdf_key = pdf["key"] if pdf else None
+
         if skip_llm or client is None:
             summary = metadata_only_summary(item)
         else:
@@ -246,9 +290,6 @@ def run(dry_run: bool = False, skip_llm: bool = False, force: bool = False) -> i
         terms = clean_terms(summary.get("key_terms") or [])
         term_links = resolve_term_links(zot, item["key"], terms) if terms else []
 
-        pdf = get_pdf_attachment(zot, item["key"])
-        pdf_key = pdf["key"] if pdf else None
-
         md_path, hub_path = write_outputs(
             summaries_dir,
             hubs_dir,
@@ -260,12 +301,13 @@ def run(dry_run: bool = False, skip_llm: bool = False, force: bool = False) -> i
         )
 
         notify_title = f"📚 今日文献 ({idx}/{total})"
-        notify_macos(
+        emit_notification(
             title=notify_title,
             subtitle=title[:80] + ("…" if len(title) > 80 else ""),
             message=briefing,
             hub_path=hub_path,
             dry_run=dry_run,
+            no_notify=no_notify,
         )
         picked_keys.append(item["key"])
         print(f"已推送: {title}")
@@ -309,13 +351,25 @@ def main() -> None:
     parser.add_argument("--test-notify", action="store_true", help="发送测试通知")
     parser.add_argument("--verbose-notify", action="store_true", help="通知诊断详情")
     parser.add_argument("--diagnose-notify", action="store_true", help="运行通知通道诊断")
+    parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="不发送通知，改为向 stdout 输出 @@NOTIFY@@ 行供父进程处理",
+    )
     args = parser.parse_args()
     if args.diagnose_notify:
         notify_diagnose()
         sys.exit(0)
     if args.test_notify:
         sys.exit(test_notification(verbose=args.verbose_notify))
-    sys.exit(run(dry_run=args.dry_run, skip_llm=args.metadata_only, force=args.force))
+    sys.exit(
+        run(
+            dry_run=args.dry_run,
+            skip_llm=args.metadata_only,
+            force=args.force,
+            no_notify=args.no_notify,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,10 @@
+<div
+  id="note-view-root"
+  class="note-view-root"
+  data-autoinit="1"
+  data-viewer="{{ viewer }}"
+  data-api-base="{{ api_base }}"
+  data-note='{{ note_data | tojson }}'
+>
+  {% include "note_view_body.html" %}
+</div>

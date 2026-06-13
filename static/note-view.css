@@ -1,0 +1,213 @@
+.note-view-root {
+  --nv-accent: #007aff;
+  --nv-text: #1d1d1f;
+  --nv-muted: #86868b;
+  --nv-border: #e5e5ea;
+  --nv-bg: #fafafa;
+}
+
+.note-view-root .brief {
+  background: #f0f7ff;
+  border-left: 4px solid var(--nv-accent);
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  line-height: 1.55;
+  font-size: 14px;
+}
+
+.note-view-root .meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.note-view-root .meta .btn-secondary,
+.note-view-root .meta a.btn-secondary,
+.note-view-root .meta .btn-action {
+  display: inline-block;
+  padding: 9px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+  background: #e8e8ed;
+  color: var(--nv-text);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.note-view-root .content {
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.note-view-root .content h2 {
+  font-size: 1rem;
+  margin: 22px 0 8px;
+}
+
+.note-view-root .content h3 {
+  font-size: 0.95rem;
+  margin: 16px 0 6px;
+}
+
+.note-view-root .content a {
+  color: var(--nv-accent);
+}
+
+.note-view-root .content blockquote {
+  margin: 0;
+}
+
+.note-view-root .deep-read-wrap {
+  margin: 16px 0 20px;
+}
+
+.note-view-root .btn-deep-read {
+  border: none;
+  cursor: pointer;
+  background: var(--nv-accent);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.note-view-root .btn-deep-read:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.note-view-root .deep-read-panel {
+  display: none;
+  margin-top: 14px;
+  padding: 16px 18px;
+  background: var(--nv-bg);
+  border-radius: 12px;
+  border: 1px solid var(--nv-border);
+}
+
+.note-view-root .deep-read-panel.open {
+  display: block;
+}
+
+.note-view-root .deep-read-panel .content {
+  margin: 0;
+}
+
+.note-view-root .deep-read-loading {
+  text-align: center;
+  padding: 28px 12px;
+  color: var(--nv-muted);
+  font-size: 14px;
+}
+
+.note-view-root .tomato {
+  display: inline-block;
+  font-size: 28px;
+  animation: nv-tomato-bounce 0.65s ease-in-out infinite;
+}
+
+@keyframes nv-tomato-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.note-view-root .abstract-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 22px 0 8px;
+}
+
+.note-view-root .abstract-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.note-view-root .btn-abstract-zh {
+  border: none;
+  cursor: pointer;
+  background: #e8e8ed;
+  color: var(--nv-text);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.note-view-root .btn-abstract-zh:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.note-view-root .abstract-zh-panel {
+  display: none;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: var(--nv-bg);
+  border-radius: 10px;
+  border: 1px solid var(--nv-border);
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.note-view-root .abstract-zh-panel.open {
+  display: block;
+}
+
+.note-view-root .abstract-zh-loading {
+  color: var(--nv-muted);
+  font-size: 13px;
+}
+
+.note-view-root .abstract-zh-label {
+  font-size: 12px;
+  color: var(--nv-muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.note-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+  color: #1d1d1f;
+  background: #f5f5f7;
+}
+
+.note-page .card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+.note-page h1 {
+  margin: 0 0 12px;
+  font-size: 1.35rem;
+  line-height: 1.35;
+}
+
+.note-page .page-actions {
+  margin-bottom: 16px;
+}
+
+.note-page .page-actions a {
+  display: inline-block;
+  padding: 9px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+  background: #e8e8ed;
+  color: #1d1d1f;
+}

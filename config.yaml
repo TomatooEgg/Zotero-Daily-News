@@ -2,10 +2,10 @@ priority_tag: want
 count: 2
 history_days: 14
 item_types:
-  - journalArticle
-  - conferencePaper
-  - preprint
-  - report
+- journalArticle
+- conferencePaper
+- preprint
+- report
 deepseek:
   base_url: https://api.deepseek.com
   model: deepseek-chat
@@ -14,30 +14,26 @@ output:
   summaries_dir: summaries
   hubs_dir: hubs
 schedule:
-  - hour: 10
-    minute: 0
-  - hour: 18
-    minute: 0
-summary_prompt: |
-  你是学术阅读助手。根据文献元数据，生成中文阅读简报。
-
-  请严格输出 JSON（不要其他文字）：
-  {
-    "briefing": "60-100字头条简报，一句话概括核心贡献",
-    "sections": [
-      {"heading": "核心贡献", "body": "2-4句"},
-      {"heading": "方法亮点", "body": "2-4句"},
-      {"heading": "为何值得读", "body": "1-3句"}
-    ],
-    "key_terms": ["专有名词1", "专有名词2", "专有名词3"]
-  }
-
-  要求：
-  - key_terms 提取 3-5 个论文中的专有名词/方法名/数据集名，便于后续在 PDF 中定位
-  - 不要编造具体实验数字；无摘要时保守表述
-  - 全部使用中文
-
-  文献信息：
-  {context}
+- hour: 12
+  minute: 1
+- hour: 18
+  minute: 0
+summary_prompt: "你是学术阅读助手。根据文献元数据，生成中文阅读简报。\n\n请严格输出 JSON（不要其他文字）：\n{\n  \"briefing\"\
+  : \"60-100字头条简报，一句话概括核心贡献\",\n  \"sections\": [\n    {\"heading\": \"核心贡献\", \"\
+  body\": \"2-4句\"},\n    {\"heading\": \"方法亮点\", \"body\": \"2-4句\"},\n    {\"heading\"\
+  : \"为何值得读\", \"body\": \"1-3句\"}\n  ],\n  \"key_terms\": [\"专有名词1\", \"专有名词2\",\
+  \ \"专有名词3\"]\n}\n\n要求：\n- key_terms 提取 3-5 个论文中的专有名词/方法名/数据集名，便于后续在 PDF 中定位\n- 不要编造具体实验数字；无摘要时保守表述\n\
+  - 全部使用中文\n\n文献信息：\n{context}"
+pdf_summary:
+  enabled: true
+  max_chars: 80000
+pdf_summary_prompt: "你是学术阅读助手。请根据文献元数据与 PDF 正文，生成深度中文解读。\n\n请严格输出 JSON（不要其他文字）：\n\
+  {\n  \"sections\": [\n    {\"heading\": \"研究背景与问题\", \"body\": \"3-5句\"},\n    {\"\
+  heading\": \"核心方法\", \"body\": \"4-6句，说明关键思路与技术细节\"},\n    {\"heading\": \"主要发现\"\
+  , \"body\": \"4-6句，引用论文中的实验设置与结果\"},\n    {\"heading\": \"局限与启示\", \"body\": \"\
+  2-4句\"}\n  ],\n  \"key_terms\": [\"专有名词1\", \"专有名词2\", \"专有名词3\"]\n}\n\n要求：\n- 基于\
+  \ PDF 正文解读，可引用具体方法、实验设置、数值结果\n- 若 PDF 文本不完整或被截断，在相应 section 中如实说明\n- key_terms 提取\
+  \ 5-8 个论文中的专有名词/方法名/数据集名\n- 全部使用中文\n\n文献元数据：\n{context}\n\nPDF 正文（来源：{pdf_source}）：\n\
+  {pdf_text}"
 ui:
   port: 18765
