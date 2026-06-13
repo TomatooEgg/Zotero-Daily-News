@@ -2,6 +2,8 @@
 
 从 Zotero 文献库中定时抽取待读论文，用 DeepSeek 生成中文阅读简报，并通过 macOS 通知推送。附带本地 Web / 原生窗口控制台，可浏览历史简报、生成深度解读与摘要翻译。
 
+**仓库**：[TomatooEgg/Zotero-Daily-News](https://github.com/TomatooEgg/Zotero-Daily-News)
+
 **平台要求**：macOS 11+，已安装并运行 [Zotero](https://www.zotero.org/)。
 
 ## 功能概览
@@ -19,8 +21,8 @@
 ### 1. 安装
 
 ```bash
-git clone https://github.com/<你的用户名>/zotero-digest.git
-cd zotero-digest
+git clone https://github.com/TomatooEgg/Zotero-Daily-News.git
+cd Zotero-Daily-News
 bash install.sh
 ```
 
@@ -72,7 +74,7 @@ DEEPSEEK_API_KEY=sk-your-key-here
 ## 项目结构
 
 ```
-zotero-digest/
+Zotero-Daily-News/
 ├── digest.py           # 主流程：抽文献 → AI 总结 → 写文件 → 通知
 ├── app.py              # Flask 控制台与笔记 API
 ├── launcher.py         # 启动 Web 服务 + pywebview 窗口
@@ -138,11 +140,10 @@ brew install vjeantet/tap/alerter   # 可选，通知「查看总结」按钮
 .venv/bin/python -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); reload_launchd(c)"
 ```
 
-## 上传 GitHub 前检查
+## 发布前检查
 
 - [ ] 已提交全部源码（勿提交 `.env`、`summaries/`、`hubs/`、`logs/`）
 - [ ] `.env` 中无真实 API Key（仅保留 `.env.example` 占位符）
-- [ ] README 中 `git clone` 地址已改为你的仓库 URL
 - [ ] 首次 push 后，在 GitHub 仓库 Settings 中确认未误上传密钥
 
 ## 许可证
