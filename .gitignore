@@ -1,0 +1,35 @@
+# 环境与密钥
+.env
+.env.save
+.venv/
+
+# 运行时生成
+summaries/
+hubs/
+history.json
+logs/
+*.log
+
+# launchd / 构建产物
+com.duanjingyi.zotero-digest.plist
+Zotero 简报.app/
+bin/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*~
