@@ -16,6 +16,38 @@
 - **控制台界面**：配置推送参数、手动触发、查看日志、管理历史笔记
 - **原生窗口**：双击 `Zotero 简报.app` 打开 pywebview 窗口；支持 `zotero-digest://` 深链接
 
+### 弹窗
+<img width="727" height="489" alt="弹窗" src="https://github.com/user-attachments/assets/1d87d011-8d66-4674-b3fd-53b023e442c4" />
+
+### 基础简报
+https://github.com/user-attachments/assets/91243bc2-dd0d-4f5f-b848-c5f1c1b18c84
+### 链接Zotero
+https://github.com/user-attachments/assets/7cb22dd1-7f02-49df-914a-074837cca5a9
+### 历史记录
+<img width="2212" height="1738" alt="history" src="https://github.com/user-attachments/assets/f59b74b6-dbc6-4c14-9fbb-ed91ddf83859" />
+
+### 摘要翻译
+https://github.com/user-attachments/assets/0ae97039-1637-4f83-a92b-67d3ab091e37
+
+### 深度解读
+
+
+https://github.com/user-attachments/assets/b3e8ab46-d3a3-4087-931d-315171452c7e
+
+
+
+*仅针对Zotero中有摘要项内容的文献
+*初次生成时需短暂加载
+
+
+### 自定义优先tag与发送时间
+<img width="1548" height="1566" alt="截屏2026-06-13 12 46 49" src="https://github.com/user-attachments/assets/76b99412-2f3f-4faa-a1ee-8921f7f16696" />
+*优先选取带有该tag的内容进行推送，tag从zotero中读取
+
+
+### 自定义总结prompt
+<img width="1436" height="1540" alt="截屏2026-06-13 13 46 21" src="https://github.com/user-attachments/assets/d51ba67a-6e2f-41ef-bc13-44db8fbb9760" />
+
 ## 快速开始
 
 ### 1. 安装
