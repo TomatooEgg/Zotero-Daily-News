@@ -140,11 +140,6 @@ brew install vjeantet/tap/alerter   # 可选，通知「查看总结」按钮
 .venv/bin/python -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); reload_launchd(c)"
 ```
 
-## 发布前检查
-
-- [ ] 已提交全部源码（勿提交 `.env`、`summaries/`、`hubs/`、`logs/`）
-- [ ] `.env` 中无真实 API Key（仅保留 `.env.example` 占位符）
-- [ ] 首次 push 后，在 GitHub 仓库 Settings 中确认未误上传密钥
 
 ## 许可证
 
