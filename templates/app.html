@@ -115,6 +115,16 @@
     .schedule-item { display: flex; gap: 8px; align-items: center; }
     .schedule-item input { width: 80px; }
     .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .queue-table th, .queue-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .queue-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    .queue-table tr.push-slot { background: #f0f7ff; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .badge.pending { background: #f2f2f7; color: var(--muted); }
+    .badge.ready { background: #d1fae5; color: #065f46; }
+    .badge.pushed { background: #e8e8ed; color: var(--muted); }
+    .badge.error { background: #fee2e2; color: #991b1b; }
+    .badge.skipped { background: #fef3c7; color: #92400e; }
     pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 10px; font-size: 12px; overflow: auto; max-height: 200px; white-space: pre-wrap; }
     #toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 18px; border-radius: 10px; display: none; font-size: 14px; z-index: 99; }
   </style>
@@ -162,6 +172,22 @@
             <div><label>每次推送篇数</label><input id="count" type="number" min="1" max="10" value="{{ config.count }}"></div>
             <div><label>去重天数</label><input id="history_days" type="number" min="1" max="90" value="{{ config.history_days }}"></div>
           </div>
+          <div class="row row-3">
+            <div>
+              <label>待推清单篇数</label>
+              <input id="queue_size" type="number" min="1" max="30" value="{{ config.queue_size }}">
+              <div class="hint">随机选文数量，应 ≥ 每次推送篇数</div>
+            </div>
+            <div>
+              <label>预生成提前（分钟）</label>
+              <input id="prepare_before_minutes" type="number" min="15" max="720" value="{{ config.prepare_before_minutes }}">
+              <div class="hint">定时任务在推送前多久刷新清单并预生成</div>
+            </div>
+            <div>
+              <label><input type="checkbox" id="pre_generate_deep_read" {% if config.pre_generate_deep_read %}checked{% endif %}> 预生成深度解读</label>
+              <div class="hint">推送前为前 N 篇（N=每次推送篇数）生成 PDF 深度报告</div>
+            </div>
+          </div>
           <div class="row">
             <div>
               <label>Markdown 总结路径</label>
@@ -175,23 +201,45 @@
           </div>
         </div>
         <div class="card">
+          <h2>Zotero 回推</h2>
+          <p class="hint" id="zotero_config_status">加载中…</p>
+          <div class="row">
+            <div>
+              <label>API Key</label>
+              <input id="zotero_api_key" type="password" autocomplete="off"
+                placeholder="在 zotero.org/settings/keys 创建，需 library 写入权限">
+              <div class="hint">留空保存则保留已有 Key</div>
+            </div>
+            <div>
+              <label>Library ID（可选）</label>
+              <input id="zotero_library_id" placeholder="留空则自动解析">
+            </div>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn-secondary" onclick="testZoteroConfig()">测试连接</button>
+            <button type="button" class="btn-primary" onclick="saveZoteroConfig()">保存凭证</button>
+          </div>
+        </div>
+        <div class="card">
           <h2>发送时间</h2>
           <div id="schedule_list" class="schedule-list"></div>
           <div class="actions"><button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button></div>
         </div>
         <div class="card">
           <h2>头条简报 Prompt</h2>
-          <label>DeepSeek 模型</label>
-          <input id="deepseek_model" value="{{ config.deepseek_model }}" style="margin-bottom:12px">
+          <label>简报模型</label>
+          <input id="deepseek_briefing_model" value="{{ config.deepseek_briefing_model }}" style="margin-bottom:12px">
           <label>Prompt（须含 <code>{context}</code>，输出 JSON）</label>
           <textarea id="summary_prompt">{{ config.summary_prompt }}</textarea>
         </div>
         <div class="card">
           <h2>PDF 深度解读</h2>
+          <label>深度报告模型</label>
+          <input id="deepseek_deep_read_model" value="{{ config.deepseek_deep_read_model }}" style="margin-bottom:12px">
           <div class="row">
             <div>
               <label><input type="checkbox" id="pdf_summary_enabled" {% if config.pdf_summary_enabled %}checked{% endif %}> 启用全文深度解读</label>
-              <div class="hint">点击按钮后按需读取 PDF 生成，推送时不预生成</div>
+              <div class="hint">可在推送前预生成，或在笔记视图中按需生成</div>
             </div>
             <div>
               <label>PDF 最大字符数</label>
@@ -215,8 +263,19 @@
     <div id="panel-actions" class="panel">
       <div class="scroll-panel">
         <div class="card">
+          <h2>待推清单</h2>
+          <p class="hint" id="queue_meta">加载中…</p>
+          <div class="actions" style="margin-bottom:12px">
+            <button class="btn-secondary" onclick="refreshQueue(false)">随机刷新清单</button>
+            <button class="btn-secondary" onclick="prepareQueue()">预生成（前 N 篇）</button>
+            <button class="btn-ghost" onclick="refreshQueue(true)">强制刷新</button>
+          </div>
+          <div id="queue_list"></div>
+        </div>
+        <div class="card">
           <h2>状态</h2>
-          <p>定时任务：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
+          <p>推送任务：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
+          <p id="prepare_launchd_status" class="hint">预生成任务：加载中…</p>
           <div class="actions">
             <button class="btn-secondary" onclick="refreshStatus()">刷新</button>
             <button class="btn-secondary" onclick="testNotify()">测试通知</button>
@@ -258,7 +317,8 @@
         tab.classList.add('active');
         document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
         if (tab.dataset.panel === 'notes') loadNotes();
-        if (tab.dataset.panel === 'actions') refreshStatus();
+        if (tab.dataset.panel === 'actions') { refreshStatus(); loadQueue(); }
+        if (tab.dataset.panel === 'settings') loadZoteroConfig();
       });
     });
 
@@ -616,10 +676,16 @@
     function removeSchedule(i) { initialSchedule.splice(i, 1); renderSchedule(); }
 
     function gatherConfig() {
+      const count = +document.getElementById('count').value;
+      let queueSize = +document.getElementById('queue_size').value;
+      if (queueSize < count) queueSize = count;
       return {
         priority_tag: document.getElementById('priority_tag').value,
-        count: +document.getElementById('count').value,
+        count,
         history_days: +document.getElementById('history_days').value,
+        queue_size: queueSize,
+        prepare_before_minutes: +document.getElementById('prepare_before_minutes').value,
+        pre_generate_deep_read: document.getElementById('pre_generate_deep_read').checked,
         summaries_dir: document.getElementById('summaries_dir').value,
         hubs_dir: document.getElementById('hubs_dir').value,
         schedule: initialSchedule,
@@ -627,7 +693,8 @@
         pdf_summary_enabled: document.getElementById('pdf_summary_enabled').checked,
         pdf_summary_max_chars: +document.getElementById('pdf_summary_max_chars').value,
         pdf_summary_prompt: document.getElementById('pdf_summary_prompt').value,
-        deepseek_model: document.getElementById('deepseek_model').value,
+        deepseek_briefing_model: document.getElementById('deepseek_briefing_model').value,
+        deepseek_deep_read_model: document.getElementById('deepseek_deep_read_model').value,
       };
     }
 
@@ -635,6 +702,58 @@
       const res = await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gatherConfig()) });
       const data = await res.json();
       toast(data.message || '已保存');
+    }
+
+    async function loadZoteroConfig() {
+      const statusEl = document.getElementById('zotero_config_status');
+      if (!statusEl) return;
+      try {
+        const res = await fetch('/api/zotero-config');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '加载失败');
+        const lib = data.library_id ? ' · Library ' + data.library_id : '';
+        statusEl.textContent = data.configured
+          ? '已配置（' + (data.api_key_masked || '••••') + lib + '）'
+          : '未配置 — 填写 API Key 后可一键回推简报到 Zotero 条目子笔记';
+        document.getElementById('zotero_library_id').value = data.library_id || '';
+        document.getElementById('zotero_api_key').value = '';
+      } catch (err) {
+        statusEl.textContent = err.message || '加载失败';
+      }
+    }
+
+    async function saveZoteroConfig() {
+      const body = {
+        library_id: document.getElementById('zotero_library_id').value.trim(),
+      };
+      const apiKey = document.getElementById('zotero_api_key').value.trim();
+      if (apiKey) body.api_key = apiKey;
+      const res = await fetch('/api/zotero-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '保存失败'); return; }
+      toast(data.message || '凭证已保存');
+      document.getElementById('zotero_api_key').value = '';
+      loadZoteroConfig();
+    }
+
+    async function testZoteroConfig() {
+      toast('测试连接中…');
+      const res = await fetch('/api/zotero-config/test', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        let msg = data.message || '连接成功';
+        if (data.library_id) msg += '（Library ' + data.library_id + '）';
+        toast(msg);
+        if (data.library_id) {
+          document.getElementById('zotero_library_id').value = data.library_id;
+        }
+      } else {
+        toast(data.message || '连接失败');
+      }
     }
 
     async function reloadSchedule() {
@@ -655,8 +774,86 @@
         msg = '推送完成，但部分通知未弹出，请查看日志';
       }
       toast(msg);
-      if (data.ok) loadNotes();
+      if (data.ok) { loadNotes(); loadQueue(); }
       refreshStatus();
+    }
+
+    function statusBadge(label, kind) {
+      return `<span class="badge ${kind}">${esc(label)}</span>`;
+    }
+
+    function queueStatusLabel(status) {
+      const map = { pending: ['待生成', 'pending'], ready: ['就绪', 'ready'], pushed: ['已推送', 'pushed'], error: ['失败', 'error'] };
+      const [label, kind] = map[status] || [status || '未知', 'pending'];
+      return statusBadge(label, kind);
+    }
+
+    function deepReadLabel(state) {
+      const map = {
+        pending: ['深度待生成', 'pending'],
+        ready: ['深度就绪', 'ready'],
+        skipped: ['无深度', 'skipped'],
+        error: ['深度失败', 'error'],
+      };
+      const [label, kind] = map[state] || [state || '-', 'pending'];
+      return statusBadge(label, kind);
+    }
+
+    async function loadQueue() {
+      const meta = document.getElementById('queue_meta');
+      const list = document.getElementById('queue_list');
+      if (!meta || !list) return;
+      try {
+        const res = await fetch('/api/queue');
+        const data = await res.json();
+        const pushCount = data.push_count || data.settings?.push_count || 2;
+        if (!data.exists || !data.items?.length) {
+          meta.textContent = '暂无待推清单。点击「随机刷新清单」从 Zotero 随机选文。';
+          list.innerHTML = '';
+          return;
+        }
+        const created = data.created_at ? `创建于 ${data.created_at}` : '';
+        const prepared = data.prepared_at ? ` · 最近预生成 ${data.prepared_at}` : '';
+        meta.textContent = `${created}${prepared} · 就绪 ${data.push_ready_count}/${pushCount}（推送位）`;
+        list.innerHTML = `<table class="queue-table"><thead><tr>
+          <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th>
+        </tr></thead><tbody>` + data.items.map((item, i) => {
+          const slot = i < pushCount ? ' push-slot' : '';
+          const pdf = item.has_pdf ? '有' : '无';
+          return `<tr class="${slot.trim()}">
+            <td>${i + 1}${i < pushCount ? ' <span class="hint">推送</span>' : ''}</td>
+            <td>${esc(item.title || item.item_key)}</td>
+            <td>${queueStatusLabel(item.status)}</td>
+            <td>${deepReadLabel(item.deep_read)}</td>
+            <td>${pdf}</td>
+          </tr>`;
+        }).join('') + '</tbody></table>';
+      } catch (_) {
+        meta.textContent = '加载待推清单失败';
+      }
+    }
+
+    async function refreshQueue(force) {
+      toast(force ? '强制刷新清单…' : '随机刷新清单…');
+      const res = await fetch('/api/queue/refresh', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ force: !!force }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '刷新失败'); return; }
+      toast(`已刷新 ${data.count} 篇`);
+      loadQueue();
+    }
+
+    async function prepareQueue() {
+      toast('预生成中，请稍候…');
+      const res = await fetch('/api/queue/prepare', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || '预生成失败'); return; }
+      toast('预生成完成');
+      loadQueue();
+      loadNotes();
     }
 
     async function testNotify() {
@@ -676,13 +873,13 @@
       const data = await res.json();
       document.getElementById('stdout_log').textContent = data.stdout;
       document.getElementById('stderr_log').textContent = data.stderr;
-    }
-
-    async function refreshStatus() {
-      const res = await fetch('/api/status');
-      const data = await res.json();
-      document.getElementById('stdout_log').textContent = data.stdout;
-      document.getElementById('stderr_log').textContent = data.stderr;
+      const prep = document.getElementById('prepare_launchd_status');
+      if (prep && data.launchd) {
+        const ld = data.launchd;
+        const ok = ld.prepare_loaded ? '已加载' : '未加载';
+        const mins = ld.prepare_before_minutes ?? 120;
+        prep.textContent = `预生成任务：${ok}（推送前 ${mins} 分钟自动刷新并预生成）`;
+      }
     }
 
     const COLUMN_WIDTHS_KEY = 'zotero-digest-column-widths';
@@ -769,6 +966,7 @@
     loadSidebarState();
     initColumnResizers();
     loadNotes();
+    loadZoteroConfig();
   </script>
 </body>
 </html>

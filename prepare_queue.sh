@@ -9,4 +9,4 @@ if [[ -f .env ]]; then
   source .env
   set +a
 fi
-exec .venv/bin/python launcher.py
+exec .venv/bin/python digest.py --refresh-queue --prepare-queue

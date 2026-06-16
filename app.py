@@ -12,17 +12,20 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 from abstract_zh import generate_abstract_zh
-from config_manager import DEFAULT_CONFIG, SCRIPT_DIR, load_config, resolve_output_dirs, save_config
+from config_manager import DEFAULT_CONFIG, SCRIPT_DIR, deepseek_briefing_model, deepseek_deep_read_model, load_config, resolve_output_dirs, save_config
 from deep_read import generate_deep_read
 from launchd_mgr import launchd_status, reload_launchd
 from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
+from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
+from zotero_push import push_digest_note, push_status
 
 app = Flask(__name__)
 
 _generating_deep_read: set[str] = set()
 _generating_abstract_zh: set[str] = set()
+_pushing_zotero: set[str] = set()
 
 
 @app.after_request
@@ -44,10 +47,14 @@ def tail_log(path: Path, lines: int = 30) -> str:
 def config_for_ui() -> dict:
     cfg = load_config()
     output = cfg.get("output") or {}
+    queue_cfg = cfg.get("queue") or {}
     return {
         "priority_tag": cfg.get("priority_tag", "want"),
         "count": cfg.get("count", 2),
         "history_days": cfg.get("history_days", 14),
+        "queue_size": int(queue_cfg.get("size", 4)),
+        "prepare_before_minutes": int(queue_cfg.get("prepare_before_minutes", 120)),
+        "pre_generate_deep_read": bool(queue_cfg.get("pre_generate_deep_read", True)),
         "summaries_dir": output.get("summaries_dir", "summaries"),
         "hubs_dir": output.get("hubs_dir", "hubs"),
         "schedule": cfg.get("schedule") or DEFAULT_CONFIG["schedule"],
@@ -55,7 +62,8 @@ def config_for_ui() -> dict:
         "pdf_summary_enabled": bool((cfg.get("pdf_summary") or {}).get("enabled", True)),
         "pdf_summary_max_chars": int((cfg.get("pdf_summary") or {}).get("max_chars", 80000)),
         "pdf_summary_prompt": cfg.get("pdf_summary_prompt", DEFAULT_CONFIG["pdf_summary_prompt"]),
-        "deepseek_model": (cfg.get("deepseek") or {}).get("model", "deepseek-chat"),
+        "deepseek_briefing_model": deepseek_briefing_model(cfg),
+        "deepseek_deep_read_model": deepseek_deep_read_model(cfg),
     }
 
 
@@ -269,7 +277,9 @@ def api_generate_deep_read(note_id: str):
         return jsonify({"error": "正在生成中，请稍候"}), 409
     _generating_deep_read.add(note_id)
     try:
-        result = generate_deep_read(note_id)
+        data = request.get_json(silent=True) or {}
+        regenerate = bool(data.get("regenerate"))
+        result = generate_deep_read(note_id, regenerate=regenerate)
         return jsonify({"ok": True, **result})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -297,6 +307,66 @@ def api_generate_abstract_zh(note_id: str):
         return jsonify({"error": f"翻译失败: {exc}"}), 500
     finally:
         _generating_abstract_zh.discard(note_id)
+
+
+@app.get("/api/zotero-config")
+def api_get_zotero_config():
+    return jsonify(zotero_config_for_ui())
+
+
+@app.post("/api/zotero-config")
+def api_save_zotero_config():
+    data = request.get_json(silent=True) or {}
+    api_key = data.get("api_key")
+    library_id = data.get("library_id")
+    if api_key is not None:
+        api_key = str(api_key).strip()
+    if library_id is not None:
+        library_id = str(library_id).strip()
+    save_zotero_credentials(
+        api_key=api_key if api_key else None,
+        library_id=library_id,
+        keep_api_key_if_empty=True,
+    )
+    return jsonify({"ok": True, "message": "凭证已保存", **zotero_config_for_ui()})
+
+
+@app.post("/api/zotero-config/test")
+def api_test_zotero_config():
+    result = test_zotero_connection()
+    status = 200 if result.get("ok") else 400
+    return jsonify(result), status
+
+
+@app.get("/api/notes/<note_id>/push-zotero/status")
+def api_push_zotero_status(note_id: str):
+    try:
+        return jsonify(push_status(note_id))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+
+
+@app.post("/api/notes/<note_id>/push-zotero")
+def api_push_zotero(note_id: str):
+    if note_id in _pushing_zotero:
+        return jsonify({"error": "正在回推中，请稍候"}), 409
+    _pushing_zotero.add(note_id)
+    try:
+        data = request.get_json(silent=True) or {}
+        mode = str(data.get("mode", "create")).strip().lower()
+        if mode not in ("create", "update"):
+            return jsonify({"error": "mode 须为 create 或 update"}), 400
+        target_key = (data.get("note_key") or "").strip() or None
+        result = push_digest_note(note_id, mode, target_key=target_key)  # type: ignore[arg-type]
+        return jsonify({"ok": True, **result, "message": "已回推，Zotero 同步后可在条目下查看"})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"回推失败: {exc}"}), 500
+    finally:
+        _pushing_zotero.discard(note_id)
 
 
 @app.get("/hub/<note_id>")
@@ -330,6 +400,16 @@ def api_save_config():
     cfg["count"] = max(1, min(10, int(data.get("count", 2))))
     cfg["history_days"] = max(1, min(90, int(data.get("history_days", 14))))
 
+    cfg.setdefault("queue", {})
+    cfg["queue"]["size"] = max(
+        cfg["count"],
+        min(30, int(data.get("queue_size", cfg["count"] * 2))),
+    )
+    cfg["queue"]["prepare_before_minutes"] = max(
+        15, min(720, int(data.get("prepare_before_minutes", 120)))
+    )
+    cfg["queue"]["pre_generate_deep_read"] = bool(data.get("pre_generate_deep_read", True))
+
     cfg.setdefault("output", {})
     cfg["output"]["summaries_dir"] = str(data.get("summaries_dir", "summaries")).strip()
     cfg["output"]["hubs_dir"] = str(data.get("hubs_dir", "hubs")).strip()
@@ -352,10 +432,47 @@ def api_save_config():
     )
 
     cfg.setdefault("deepseek", {})
-    cfg["deepseek"]["model"] = str(data.get("deepseek_model", "deepseek-chat")).strip()
+    cfg["deepseek"]["briefing_model"] = str(
+        data.get("deepseek_briefing_model", deepseek_briefing_model(cfg))
+    ).strip()
+    cfg["deepseek"]["deep_read_model"] = str(
+        data.get("deepseek_deep_read_model", deepseek_deep_read_model(cfg))
+    ).strip()
+    cfg["deepseek"].pop("model", None)
 
     save_config(cfg)
     return jsonify({"ok": True, "message": "配置已保存"})
+
+
+@app.get("/api/queue")
+def api_get_queue():
+    from queue_manager import queue_summary_for_ui
+
+    return jsonify(queue_summary_for_ui())
+
+
+@app.post("/api/queue/refresh")
+def api_refresh_queue():
+    from queue_manager import refresh_queue
+
+    force = bool(request.json and request.json.get("force"))
+    try:
+        queue = refresh_queue(force=force)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "created_at": queue.get("created_at"), "count": len(queue.get("items") or [])})
+
+
+@app.post("/api/queue/prepare")
+def api_prepare_queue():
+    from queue_manager import prepare_queue
+
+    skip_llm = bool(request.json and request.json.get("metadata_only"))
+    try:
+        prepare_queue(skip_llm=skip_llm)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True})
 
 
 @app.post("/api/reload-schedule")
@@ -368,9 +485,10 @@ def api_reload_schedule():
 @app.post("/api/run")
 def api_run():
     force = bool(request.json and request.json.get("force"))
-    cmd = python_cmd(str(SCRIPT_DIR / "digest.py"), "--no-notify")
+    script_args = [str(SCRIPT_DIR / "digest.py"), "--no-notify"]
     if force:
-        cmd.append("--force")
+        script_args.append("--force")
+    cmd = python_cmd(*script_args)
     result = subprocess.run(
         cmd,
         cwd=str(SCRIPT_DIR),

@@ -8,11 +8,11 @@
 
 ## 功能概览
 
-- **定时推送**：按 `config.yaml` 中的时间表，从带指定标签的文献中随机抽取若干篇，生成头条简报并发送系统通知
+- **定时推送**：按 `config.yaml` 中的时间表，从待推清单推送已预生成的简报；推送前可随机选文并预生成深度解读
 - **AI 简报**：基于文献元数据（标题、作者、摘要等）生成结构化中文总结，写入 Markdown 并附带 HTML 中转页
 - **深度解读**：在笔记视图中基于 PDF 正文调用 DeepSeek 生成更详细的章节解读（可选）
 - **摘要翻译**：将英文摘要翻译为中文（可选）
-- **专有名词跳转**：总结中的 key terms 可一键在 Zotero PDF 中搜索定位
+- **关键术语对照**：总结中列出核心专有名词的中英文对照（如 `流形[manifold]`）
 - **控制台界面**：配置推送参数、手动触发、查看日志、管理历史笔记
 - **原生窗口**：双击 `Zotero 简报.app` 打开 pywebview 窗口；支持 `zotero-digest://` 深链接
 
@@ -78,28 +78,37 @@ DEEPSEEK_API_KEY=sk-your-key-here
 
 **应用配置**（`config.yaml` 或控制台界面）：
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| `priority_tag` | 优先抽取的标签 | `want` |
-| `count` | 每次推送篇数 | `2` |
-| `history_days` | 去重天数（近期已推送的不再选） | `14` |
-| `schedule` | launchd 定时（可多时段） | 12:01、18:00 |
-| `summary_prompt` | 元数据简报 Prompt | 见 `config_manager.py` |
-| `pdf_summary` | 深度解读相关配置 | 默认启用 |
-| `ui.port` | 本地 Web 服务端口 | `18765` |
+
+| 配置项              | 说明               | 默认值                   |
+| ---------------- | ---------------- | --------------------- |
+| `priority_tag`   | 优先抽取的标签          | `want`                |
+| `count`          | 每次推送篇数           | `2`                   |
+| `history_days`   | 去重天数（近期已推送的不再选）  | `14`                  |
+| `queue.size`     | 待推清单随机选文篇数（≥ count） | `4`                   |
+| `queue.prepare_before_minutes` | 推送前多久自动预生成 | `120`                 |
+| `schedule`       | launchd 定时（可多时段） | 12:01、18:00           |
+| `summary_prompt` | 元数据简报 Prompt     | 见 `config_manager.py` |
+| `pdf_summary`    | 深度解读相关配置         | 默认启用                  |
+| `ui.port`        | 本地 Web 服务端口      | `18765`               |
+
 
 ### 3. 使用
 
-| 方式 | 命令 / 操作 |
-|------|-------------|
-| 原生窗口 | 双击 `Zotero 简报.app` 或 `~/Desktop/Zotero 简报.app` |
-| 命令行 UI | `bash start_ui.sh` |
-| 手动推送 | `bash run.sh` 或 `bash run.sh --force` |
-| 仅预览 | `bash run.sh --dry-run` |
-| 跳过 AI | `bash run.sh --metadata-only` |
-| 测试通知 | `bash run.sh --test-notify` |
-| 通知诊断 | `bash run.sh --diagnose-notify` |
-| 重建中转页 | `.venv/bin/python rebuild_hubs.py` |
+
+| 方式     | 命令 / 操作                                        |
+| ------ | ---------------------------------------------- |
+| 原生窗口   | 双击 `Zotero 简报.app` 或 `~/Desktop/Zotero 简报.app` |
+| 命令行 UI | `bash start_ui.sh`                             |
+| 手动推送   | 控制台「立即推送」或 `bash run.sh --push-queue` |
+| 强制推送   | `bash run.sh --force`（忽略清单，即时抽选生成） |
+| 刷新待推清单 | `bash run.sh --refresh-queue` 或控制台 |
+| 预生成     | `bash prepare_queue.sh` 或控制台「预生成」 |
+| 仅预览    | `bash run.sh --dry-run --push-queue`             |
+| 跳过 AI  | `bash run.sh --metadata-only`                  |
+| 测试通知   | `bash run.sh --test-notify`                    |
+| 通知诊断   | `bash run.sh --diagnose-notify`                |
+| 重建中转页  | `.venv/bin/python rebuild_hubs.py`             |
+
 
 点击 macOS 通知后会打开 HTML 中转页，可查看完整简报、跳转 Zotero 条目或 PDF。
 
@@ -107,7 +116,9 @@ DEEPSEEK_API_KEY=sk-your-key-here
 
 ```
 Zotero-Daily-News/
-├── digest.py           # 主流程：抽文献 → AI 总结 → 写文件 → 通知
+├── digest.py           # 主流程：待推清单 / 抽文献 → AI 总结 → 写文件 → 通知
+├── queue_manager.py    # 待推清单：随机选文、预生成、推送
+├── prepare_queue.sh    # launchd 预生成脚本
 ├── app.py              # Flask 控制台与笔记 API
 ├── launcher.py         # 启动 Web 服务 + pywebview 窗口
 ├── config.yaml         # 用户配置
@@ -159,11 +170,17 @@ brew install vjeantet/tap/alerter   # 可选，通知「查看总结」按钮
 **无法连接 Zotero**  
 确认 Zotero 已启动，且高级设置中允许本地 API 通信。
 
+**打开 VPN 后无法连接 Zotero**  
+本项目已默认让本地地址绕过系统代理。若仍失败，请确认 Zotero 已启动；也可在 shell 中手动设置 `export NO_PROXY=localhost,127.0.0.1,::1` 后重试。
+
 **通知不显示**  
 运行 `bash run.sh --diagnose-notify` 检查；确认系统通知权限已授予 Terminal / Python / 简报 App。
 
 **DeepSeek 调用失败**  
 检查 `.env` 中 `DEEPSEEK_API_KEY`；无 Key 时可用 `--metadata-only` 仅输出元数据摘要。
+
+**回推 Zotero 失败**  
+在控制台 → 设置 → **Zotero 回推** 填写 API Key（[zotero.org/settings/keys](https://www.zotero.org/settings/keys)，需 library 写入权限）。也可在 `.env` 中设置 `ZOTERO_API_KEY` 与可选的 `ZOTERO_LIBRARY_ID`。
 
 **修改定时后未生效**  
 在控制台点击「重载定时任务」，或运行：

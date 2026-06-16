@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from pyzotero import zotero
 
@@ -60,6 +62,112 @@ def _text_from_pdf_bytes(data: bytes) -> str:
     return _normalize_text("\n\n".join(chunks))
 
 
+def _zotero_data_dir() -> Path | None:
+    candidate = Path.home() / "Zotero"
+    if (candidate / "zotero.sqlite").exists():
+        return candidate
+    return None
+
+
+def _base_attachment_path(data_dir: Path) -> Path | None:
+    prefs = data_dir / "prefs.js"
+    if not prefs.exists():
+        return None
+    try:
+        text = prefs.read_text(encoding="utf-8", errors="replace")
+        match = re.search(
+            r'user_pref\("extensions\.zotero\.baseAttachmentPath",\s*"([^"]+)"\)',
+            text,
+        )
+        if match:
+            return Path(match.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_zotero_path(
+    zotero_path: str,
+    attach_key: str,
+    storage_dir: Path,
+    data_dir: Path,
+) -> Path | None:
+    if not zotero_path:
+        return None
+
+    if zotero_path.startswith("storage:"):
+        rel = zotero_path.split(":", 1)[1]
+        parts = [p for p in rel.split("/") if p]
+        return storage_dir / attach_key / Path(*parts)
+
+    if zotero_path.startswith("file://"):
+        parsed = urlparse(zotero_path)
+        decoded = unquote(parsed.path or "")
+        if (
+            os.name == "nt"
+            and decoded.startswith("/")
+            and len(decoded) > 2
+            and decoded[2] == ":"
+        ):
+            decoded = decoded[1:]
+        return Path(decoded) if decoded else None
+
+    if os.path.isabs(zotero_path):
+        return Path(zotero_path)
+
+    if zotero_path.startswith("attachments:"):
+        rel = zotero_path.split(":", 1)[1]
+        parts = [p for p in rel.split("/") if p]
+        base = _base_attachment_path(data_dir)
+        if base and base.exists():
+            return base / Path(*parts)
+        return None
+
+    return None
+
+
+def get_local_pdf_path(zot: zotero.Zotero, attach_key: str) -> Path | None:
+    """定位 PDF 附件的本地文件路径。"""
+    return _find_local_pdf_path(zot, attach_key)
+
+
+def _find_local_pdf_path(zot: zotero.Zotero, attach_key: str) -> Path | None:
+    """从 Zotero 本地 storage 或链接路径定位 PDF，绕过 file:// 下载。"""
+    data_dir = _zotero_data_dir()
+    if not data_dir:
+        return None
+
+    storage_dir = data_dir / "storage"
+    zotero_path = ""
+    filename = ""
+
+    try:
+        item_data = zot.item(attach_key).get("data") or {}
+        zotero_path = (item_data.get("path") or "").strip()
+        filename = (item_data.get("filename") or "").strip()
+    except Exception:
+        pass
+
+    if zotero_path:
+        resolved = _resolve_zotero_path(zotero_path, attach_key, storage_dir, data_dir)
+        if resolved and resolved.is_file():
+            return resolved
+
+    folder = storage_dir / attach_key
+    if not folder.is_dir():
+        return None
+
+    if filename:
+        candidate = folder / filename
+        if candidate.is_file():
+            return candidate
+
+    pdfs = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"]
+    if not pdfs:
+        return None
+    return max(pdfs, key=lambda p: p.stat().st_mtime)
+
+
 def extract_pdf_text(
     zot: zotero.Zotero,
     attach_key: str,
@@ -79,15 +187,20 @@ def extract_pdf_text(
     except Exception:
         pass
 
-    # 回退：下载 PDF 并本地解析
+    # 回退：本地 PDF 解析（local API 的 dump 会走 file://，httpx 不支持）
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            zot.dump(attach_key, "paper.pdf", str(tmp_path))
-            pdf_path = tmp_path / "paper.pdf"
-            if not pdf_path.exists():
-                return "", "无法下载 PDF 附件"
-            data = pdf_path.read_bytes()
+        data: bytes | None = None
+        local_path = _find_local_pdf_path(zot, attach_key)
+        if local_path:
+            data = local_path.read_bytes()
+        else:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp)
+                zot.dump(attach_key, "paper.pdf", str(tmp_path))
+                pdf_path = tmp_path / "paper.pdf"
+                if not pdf_path.exists():
+                    return "", "无法下载 PDF 附件"
+                data = pdf_path.read_bytes()
         text = _text_from_pdf_bytes(data)
         if len(text) < 200:
             return "", "PDF 未能提取足够文本（可能是扫描版）"

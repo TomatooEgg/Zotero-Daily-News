@@ -11,6 +11,11 @@
     return base + path;
   }
 
+  function notifyUser(message) {
+    if (typeof window.toast === 'function') window.toast(message);
+    else alert(message);
+  }
+
   function getNoteData(root) {
     try {
       return JSON.parse(root.dataset.note || '{}');
@@ -106,6 +111,71 @@
     }
   }
 
+  let mermaidLoadPromise = null;
+
+  function loadMermaid() {
+    if (window.mermaid) return Promise.resolve(window.mermaid);
+    if (mermaidLoadPromise) return mermaidLoadPromise;
+    mermaidLoadPromise = new Promise(function (resolve, reject) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+      script.onload = function () {
+        window.mermaid.initialize({
+          startOnLoad: false,
+          theme: 'neutral',
+          securityLevel: 'loose',
+        });
+        resolve(window.mermaid);
+      };
+      script.onerror = function () {
+        reject(new Error('Mermaid 加载失败'));
+      };
+      document.head.appendChild(script);
+    });
+    return mermaidLoadPromise;
+  }
+
+  async function renderMermaidInContainer(container) {
+    if (!container) return;
+    const codes = container.querySelectorAll(
+      'pre > code.language-mermaid, pre > code.mermaid'
+    );
+    if (!codes.length) return;
+
+    try {
+      await loadMermaid();
+    } catch (_) {
+      return;
+    }
+
+    const nodes = [];
+    codes.forEach(function (code) {
+      const pre = code.parentElement;
+      if (!pre || pre.dataset.mermaidSource === '1') return;
+      pre.dataset.mermaidSource = '1';
+      const div = document.createElement('div');
+      div.className = 'mermaid';
+      div.textContent = code.textContent;
+      pre.replaceWith(div);
+      nodes.push(div);
+    });
+
+    if (!nodes.length) return;
+    try {
+      await window.mermaid.run({ nodes: nodes });
+    } catch (err) {
+      console.error('Mermaid render error:', err);
+    }
+  }
+
+  async function ensureDeepReadMermaid(panel) {
+    if (!panel || panel.dataset.mermaidRendered === '1') return;
+    const content = panel.querySelector('.content');
+    if (!content) return;
+    await renderMermaidInContainer(content);
+    panel.dataset.mermaidRendered = '1';
+  }
+
   function placeDeepReadAfterWhyRead(contentEl, wrapEl) {
     if (!contentEl || !wrapEl) return;
     const h3s = contentEl.querySelectorAll('h3');
@@ -134,37 +204,41 @@
     contentEl.appendChild(wrapEl);
   }
 
+  function updateDeepReadRegenBtn(root) {
+    const regenBtn = root.querySelector('#deep_read_regen_btn');
+    if (!regenBtn) return;
+    const note = getNoteData(root);
+    const loading = root.dataset.deepLoading === '1';
+    regenBtn.hidden = !note.has_deep_read || loading;
+  }
+
   function setupDeepReadPanel(root, note) {
     const panel = root.querySelector('#deep_read_panel');
     if (!panel) return;
     panel.classList.remove('open');
     panel.innerHTML = '';
+    panel.dataset.mermaidRendered = '0';
     if (note.has_deep_read && note.deep_read_html) {
       panel.dataset.loaded = '1';
       panel.innerHTML = '<div class="content">' + note.deep_read_html + '</div>';
     } else {
       panel.dataset.loaded = '0';
     }
+    updateDeepReadRegenBtn(root);
   }
 
-  async function toggleDeepRead(root) {
+  async function fetchDeepRead(root, regenerate) {
     const panel = root.querySelector('#deep_read_panel');
     const btn = root.querySelector('#deep_read_btn');
-    if (!panel || !btn) return;
-
-    if (panel.classList.contains('open') && panel.dataset.loaded === '1') {
-      panel.classList.remove('open');
-      return;
-    }
-    if (panel.dataset.loaded === '1') {
-      panel.classList.add('open');
-      return;
-    }
-    if (root.dataset.deepLoading === '1') return;
+    const regenBtn = root.querySelector('#deep_read_regen_btn');
+    if (!panel) return;
 
     const note = getNoteData(root);
+    const previousHtml = note.deep_read_html || '';
     root.dataset.deepLoading = '1';
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
+    if (regenBtn) regenBtn.disabled = true;
+    updateDeepReadRegenBtn(root);
     panel.classList.add('open');
     panel.innerHTML =
       '<div class="deep-read-loading"><span class="tomato">🍅</span><div>努力读书中</div></div>';
@@ -173,20 +247,62 @@
       const res = await fetch(apiUrl(root, '/api/notes/' + encodeURIComponent(note.id) + '/deep-read'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate: !!regenerate }),
       });
       const data = await res.json();
+      if (!root.isConnected) return;
       if (!res.ok) throw new Error(data.error || '生成失败');
+      if (regenerate && data.cached) {
+        throw new Error('服务端未执行重新生成，请退出并重启简报 App 后重试');
+      }
+      if (!(data.html || '').trim()) {
+        throw new Error('深度解读结果为空，请稍后重试');
+      }
+      panel.dataset.mermaidRendered = '0';
       panel.innerHTML = '<div class="content">' + (data.html || '') + '</div>';
       panel.dataset.loaded = '1';
-      panel.classList.add('open');
       setNoteData(root, { has_deep_read: true, deep_read_html: data.html || '' });
+      await ensureDeepReadMermaid(panel);
     } catch (err) {
-      panel.innerHTML = '<div class="deep-read-loading">' + esc(err.message || '生成失败') + '</div>';
-      panel.dataset.loaded = '0';
+      if (!root.isConnected) return;
+      const message = err.message || '生成失败';
+      notifyUser(message);
+      if (regenerate && previousHtml) {
+        panel.innerHTML = '<div class="content">' + previousHtml + '</div>';
+        panel.dataset.loaded = '1';
+      } else {
+        panel.innerHTML = '<div class="deep-read-loading">' + esc(message) + '</div>';
+        panel.dataset.loaded = '0';
+      }
     } finally {
+      if (!root.isConnected) return;
       root.dataset.deepLoading = '0';
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
+      if (regenBtn) regenBtn.disabled = false;
+      updateDeepReadRegenBtn(root);
     }
+  }
+
+  async function toggleDeepRead(root) {
+    const panel = root.querySelector('#deep_read_panel');
+    if (!panel) return;
+
+    if (panel.classList.contains('open') && panel.dataset.loaded === '1') {
+      panel.classList.remove('open');
+      return;
+    }
+    if (panel.dataset.loaded === '1') {
+      panel.classList.add('open');
+      await ensureDeepReadMermaid(panel);
+      return;
+    }
+    if (root.dataset.deepLoading === '1') return;
+    await fetchDeepRead(root, false);
+  }
+
+  async function regenerateDeepRead(root) {
+    if (root.dataset.deepLoading === '1') return;
+    await fetchDeepRead(root, true);
   }
 
   function mountAbstractZhControls(root, note) {
@@ -244,11 +360,17 @@
     const wrap = document.createElement('div');
     wrap.className = 'deep-read-wrap';
     wrap.innerHTML =
+      '<div class="deep-read-head">' +
       '<button type="button" class="btn-deep-read" id="deep_read_btn">全文深度解读</button>' +
+      '<button type="button" class="btn-deep-read-regen" id="deep_read_regen_btn" title="重新生成" aria-label="重新生成" hidden>↻</button>' +
+      '</div>' +
       '<div class="deep-read-panel" id="deep_read_panel"></div>';
     placeDeepReadAfterWhyRead(contentEl, wrap);
     root.querySelector('#deep_read_btn').addEventListener('click', function () {
       toggleDeepRead(root);
+    });
+    root.querySelector('#deep_read_regen_btn').addEventListener('click', function () {
+      regenerateDeepRead(root);
     });
     setupDeepReadPanel(root, note);
   }
@@ -266,6 +388,73 @@
         if (!res.ok) throw new Error(data.error || '打开失败');
       } catch (err) {
         alert(err.message || '打开失败');
+      }
+    });
+  }
+
+  function bindPushZoteroButton(root) {
+    const btn = root.querySelector('[data-action="push-zotero"]');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      const note = getNoteData(root);
+      if (!note.id) return;
+      if (root.dataset.pushLoading === '1') return;
+
+      root.dataset.pushLoading = '1';
+      btn.disabled = true;
+      const prevText = btn.textContent;
+      btn.textContent = '回推中…';
+
+      try {
+        const statusRes = await fetch(
+          apiUrl(root, '/api/notes/' + encodeURIComponent(note.id) + '/push-zotero/status')
+        );
+        const status = await statusRes.json();
+        if (!statusRes.ok) throw new Error(status.error || '状态查询失败');
+
+        if (!status.configured) {
+          alert('未配置 Zotero API Key。\n请打开控制台 → 设置 → Zotero 回推 填写并保存凭证。');
+          return;
+        }
+
+        let mode = 'create';
+        let noteKey = null;
+        const existing = status.existing || [];
+        if (existing.length > 0) {
+          const updateLatest = confirm(
+            '检测到已有 ' + existing.length + ' 条回推笔记。\n\n' +
+            '确定 = 更新最新一条\n取消 = 选择其他操作'
+          );
+          if (updateLatest) {
+            mode = 'update';
+            noteKey = existing[0].key;
+          } else {
+            const createNew = confirm('是否新建一条子笔记？');
+            if (!createNew) return;
+            mode = 'create';
+          }
+        }
+
+        const body = { mode: mode };
+        if (noteKey) body.note_key = noteKey;
+
+        const pushRes = await fetch(
+          apiUrl(root, '/api/notes/' + encodeURIComponent(note.id) + '/push-zotero'),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }
+        );
+        const result = await pushRes.json();
+        if (!pushRes.ok) throw new Error(result.error || '回推失败');
+        alert(result.message || '已回推，Zotero 同步后可在条目下查看');
+      } catch (err) {
+        alert(err.message || '回推失败');
+      } finally {
+        root.dataset.pushLoading = '0';
+        btn.disabled = false;
+        btn.textContent = prevText;
       }
     });
   }
@@ -361,6 +550,7 @@
     mountAbstractZhControls(root, note);
     mountDeepReadControls(root, note);
     bindRevealButton(root);
+    bindPushZoteroButton(root);
     bindExternalLinks(root);
     refreshExternalLinks(root);
   }

@@ -20,11 +20,11 @@ DEFAULT_PROMPT = """你是学术阅读助手。根据文献元数据，生成中
     {{"heading": "方法亮点", "body": "2-4句"}},
     {{"heading": "为何值得读", "body": "1-3句"}}
   ],
-  "key_terms": ["专有名词1", "专有名词2", "专有名词3"]
+  "key_terms": ["专有名词1[English]", "专有名词2[English]", "专有名词3[English]"]
 }}
 
 要求：
-- key_terms 提取 3-5 个论文中的专有名词/方法名/数据集名，便于后续在 PDF 中定位
+- key_terms 提取 3-5 个论文中的专有名词/方法名/数据集名，采用「中文[原文]」中英文对照形式
 - 不要编造具体实验数字；无摘要时保守表述
 - 全部使用中文
 
@@ -41,13 +41,13 @@ DEFAULT_PDF_PROMPT = """你是学术阅读助手。请根据文献元数据与 P
     {{"heading": "主要发现", "body": "4-6句，引用论文中的实验设置与结果"}},
     {{"heading": "局限与启示", "body": "2-4句"}}
   ],
-  "key_terms": ["专有名词1", "专有名词2", "专有名词3"]
+  "key_terms": ["专有名词1[English]", "专有名词2[English]", "专有名词3[English]"]
 }}
 
 要求：
 - 基于 PDF 正文解读，可引用具体方法、实验设置、数值结果
 - 若 PDF 文本不完整或被截断，在相应 section 中如实说明
-- key_terms 提取 5-8 个论文中的专有名词/方法名/数据集名
+- key_terms 提取 5-8 个论文中的专有名词/方法名/数据集名，采用「中文[原文]」中英文对照形式
 - 全部使用中文
 
 文献元数据：
@@ -61,7 +61,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "count": 2,
     "history_days": 14,
     "item_types": ["journalArticle", "conferencePaper", "preprint", "report"],
-    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "briefing_model": "deepseek-v4-flash",
+        "deep_read_model": "deepseek-v4-pro",
+    },
     "language": "zh",
     "output": {
         "summaries_dir": "summaries",
@@ -77,6 +81,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_chars": 80000,
     },
     "pdf_summary_prompt": DEFAULT_PDF_PROMPT,
+    "queue": {
+        "size": 4,
+        "prepare_before_minutes": 120,
+        "pre_generate_deep_read": True,
+    },
     "ui": {"port": 18765},
 }
 
@@ -94,6 +103,8 @@ def load_config() -> dict[str, Any]:
         merged["deepseek"] = {**DEFAULT_CONFIG["deepseek"], **(data.get("deepseek") or {})}
     if "pdf_summary" in data:
         merged["pdf_summary"] = {**DEFAULT_CONFIG["pdf_summary"], **(data.get("pdf_summary") or {})}
+    if "queue" in data:
+        merged["queue"] = {**DEFAULT_CONFIG["queue"], **(data.get("queue") or {})}
     if "schedule" not in merged or not merged["schedule"]:
         merged["schedule"] = DEFAULT_CONFIG["schedule"]
     if not merged.get("summary_prompt"):
@@ -140,3 +151,13 @@ def build_pdf_summary_prompt(
         .replace("{pdf_text}", pdf_text)
         .replace("{pdf_source}", pdf_source)
     )
+
+
+def deepseek_briefing_model(config: dict[str, Any]) -> str:
+    ds = config.get("deepseek") or {}
+    return str(ds.get("briefing_model") or ds.get("model") or "deepseek-v4-flash").strip()
+
+
+def deepseek_deep_read_model(config: dict[str, Any]) -> str:
+    ds = config.get("deepseek") or {}
+    return str(ds.get("deep_read_model") or ds.get("model") or "deepseek-v4-pro").strip()

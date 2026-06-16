@@ -7,29 +7,32 @@ import re
 from pathlib import Path
 from typing import Any
 
-import markdown
 from openai import OpenAI
-from pyzotero import zotero
 
 from config_manager import (
     SCRIPT_DIR,
     build_pdf_summary_prompt,
+    deepseek_deep_read_model,
     load_config,
 )
 from digest import build_llm_context, load_dotenv
+from net_env import connect_zotero
 from notes_index import get_note
 from pdf_text import extract_pdf_text
-from summary_io import build_hub_html, parse_llm_summary
-from zotero_links import TermLink, clean_terms, get_pdf_attachment, resolve_term_links
+from md_render import markdown_to_html
+from summary_io import (
+    KEY_TERMS_HEADING,
+    LEGACY_KEY_TERMS_HEADING,
+    build_hub_html,
+    clean_terms,
+    parse_llm_summary,
+    render_key_terms_section,
+)
+from zotero_links import get_pdf_attachment
 
 ENV_PATH = SCRIPT_DIR / ".env"
 DEEP_READ_HEADING = "## 全文深度解读"
 LEGACY_DEEP_READ_HEADING = "## PDF 深度解读"
-KEY_TERMS_HEADING = "## 关键术语 · 原文定位"
-
-
-def connect_zotero() -> zotero.Zotero:
-    return zotero.Zotero(library_id=0, library_type="user", local=True)
 
 
 def has_deep_read(md_text: str) -> bool:
@@ -46,11 +49,18 @@ def _deep_read_start(md_text: str) -> int:
     return -1
 
 
+def _key_terms_end(md_text: str, start: int) -> int:
+    pos = _key_terms_heading_positions(md_text[start:])
+    if pos is not None:
+        return start + pos[0]
+    return -1
+
+
 def extract_deep_read_md(md_text: str) -> str | None:
     start = _deep_read_start(md_text)
     if start == -1:
         return None
-    end = md_text.find(f"\n{KEY_TERMS_HEADING}", start)
+    end = _key_terms_end(md_text, start)
     if end == -1:
         return md_text[start:].strip()
     return md_text[start:end].strip()
@@ -60,7 +70,7 @@ def strip_deep_read_md(md_text: str) -> str:
     start = _deep_read_start(md_text)
     if start == -1:
         return md_text
-    end = md_text.find(f"\n{KEY_TERMS_HEADING}", start)
+    end = _key_terms_end(md_text, start)
     if end == -1:
         return md_text[:start].rstrip() + "\n"
     return (md_text[:start].rstrip() + "\n" + md_text[end + 1 :]).strip() + "\n"
@@ -87,31 +97,54 @@ def insert_deep_read_md(
 ) -> str:
     base = strip_deep_read_md(md_text)
     block = _render_deep_read_block(sections, pdf_source)
-    key_idx = base.find(f"\n{KEY_TERMS_HEADING}")
-    if key_idx != -1:
+    pos = _key_terms_heading_positions(base)
+    if pos is not None:
+        key_idx, _ = pos
         return base[:key_idx].rstrip() + "\n\n" + block + "\n" + base[key_idx + 1 :]
     return base.rstrip() + "\n\n" + block + "\n"
 
 
-def _update_key_terms_section(md_text: str, term_links: list[TermLink]) -> str:
-    key_idx = md_text.find(f"\n{KEY_TERMS_HEADING}")
+def _key_terms_heading_positions(md_text: str) -> tuple[int, int] | None:
+    for heading in (KEY_TERMS_HEADING, LEGACY_KEY_TERMS_HEADING):
+        idx = md_text.find(f"\n{heading}")
+        if idx != -1:
+            return idx, len(heading)
+    return None
+
+
+def _update_key_terms_section(md_text: str, terms: list[str]) -> str:
+    pos = _key_terms_heading_positions(md_text)
     quick_idx = md_text.find("\n## 快捷入口")
-    if key_idx == -1 or quick_idx == -1:
+    if pos is None or quick_idx == -1:
         return md_text
 
-    lines = [KEY_TERMS_HEADING, ""]
-    for link in term_links:
-        source_note = {
-            "annotation": "PDF 高亮注释",
-            "fulltext": "PDF 全文检索",
-            "item": "条目（未精确定位）",
-        }.get(link.source, "")
-        lines.append(f"- **[{link.term}]({link.url})** — {source_note}")
-        if link.snippet:
-            lines.append(f"  - 片段：{link.snippet}")
-    lines.append("")
-    new_block = "\n".join(lines)
+    key_idx, _ = pos
+    new_block = "\n".join(render_key_terms_section(terms))
     return md_text[: key_idx + 1] + "\n" + new_block + md_text[quick_idx:]
+
+
+def _parse_key_terms(md_text: str) -> list[str]:
+    pos = _key_terms_heading_positions(md_text)
+    quick_idx = md_text.find("\n## 快捷入口")
+    if pos is None or quick_idx == -1:
+        return []
+
+    key_idx, heading_len = pos
+    chunk = md_text[key_idx + heading_len + 1 : quick_idx]
+    terms: list[str] = []
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        body = line[2:].strip()
+        link_match = re.match(r"\*\*\[([^\]]+)\]\([^)]+\)\*\*", body)
+        if link_match:
+            terms.append(link_match.group(1))
+            continue
+        plain = re.sub(r"\s*—\s*.*$", "", body).strip()
+        if plain:
+            terms.append(plain)
+    return terms
 
 
 def _parse_briefing(md_text: str) -> str:
@@ -125,7 +158,7 @@ def _parse_sections(md_text: str) -> list[dict[str, str]]:
         return []
     end = _deep_read_start(md_text)
     if end == -1:
-        end = md_text.find(f"\n{KEY_TERMS_HEADING}", start)
+        end = _key_terms_end(md_text, start)
     if end == -1:
         chunk = md_text[start:]
     else:
@@ -142,17 +175,8 @@ def _parse_sections(md_text: str) -> list[dict[str, str]]:
     return sections
 
 
-def _parse_term_links(md_text: str) -> list[TermLink]:
-    links: list[TermLink] = []
-    pattern = re.compile(r"-\s*\*\*\[([^\]]+)\]\((zotero://[^)]+)\)\*\*\s*—\s*([^\n]+)")
-    for term, url, note in pattern.findall(md_text):
-        source = "annotation" if "annotation=" in url else "fulltext" if "open-pdf" in url else "item"
-        if "全文检索" in note:
-            source = "fulltext"
-        elif "高亮" in note:
-            source = "annotation"
-        links.append(TermLink(term=term, url=url, source=source))
-    return links
+def _sections_have_body(sections: list[dict[str, str]]) -> bool:
+    return any(str(sec.get("body", "")).strip() for sec in sections)
 
 
 def merge_key_terms(primary: list[str], secondary: list[str]) -> list[str]:
@@ -185,7 +209,7 @@ def generate_pdf_summary(
 
     context = build_llm_context(item)
     prompt = build_pdf_summary_prompt(config, context, pdf_text, pdf_source)
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = deepseek_deep_read_model(config)
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -200,10 +224,10 @@ def generate_pdf_summary(
 
 
 def deep_read_to_html(deep_md: str) -> str:
-    return markdown.markdown(deep_md, extensions=["extra", "nl2br", "sane_lists"])
+    return markdown_to_html(deep_md)
 
 
-def generate_deep_read(note_id: str) -> dict[str, Any]:
+def generate_deep_read(note_id: str, *, regenerate: bool = False) -> dict[str, Any]:
     entry = get_note(note_id)
     if not entry:
         raise ValueError("笔记不存在")
@@ -211,13 +235,16 @@ def generate_deep_read(note_id: str) -> dict[str, Any]:
     md_path = Path(entry.md_path)
     md_text = md_path.read_text(encoding="utf-8")
 
-    if has_deep_read(md_text):
+    if has_deep_read(md_text) and not regenerate:
         deep_md = extract_deep_read_md(md_text) or ""
         return {
             "cached": True,
             "html": deep_read_to_html(deep_md),
             "markdown": deep_md,
         }
+
+    if regenerate:
+        md_text = strip_deep_read_md(md_text)
 
     load_dotenv(ENV_PATH)
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -239,17 +266,19 @@ def generate_deep_read(note_id: str) -> dict[str, Any]:
         raise RuntimeError("PDF 深度解读未启用")
 
     sections = pdf_summary.get("sections") or []
+    if not _sections_have_body(sections):
+        raise RuntimeError("深度解读生成结果为空，请稍后重试")
+
     pdf_source = pdf_summary.get("pdf_source") or ""
-    briefing_terms = _parse_term_links(md_text)
-    briefing_term_names = [link.term for link in briefing_terms]
     merged_terms = merge_key_terms(
         pdf_summary.get("key_terms") or [],
-        briefing_term_names,
+        _parse_key_terms(md_text),
     )
-    term_links = resolve_term_links(zot, entry.item_key, clean_terms(merged_terms))
+    terms = clean_terms(merged_terms)
 
     updated_md = insert_deep_read_md(md_text, sections, pdf_source)
-    updated_md = _update_key_terms_section(updated_md, term_links)
+    if terms:
+        updated_md = _update_key_terms_section(updated_md, terms)
     md_path.write_text(updated_md, encoding="utf-8")
 
     if entry.hub_path:

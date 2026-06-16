@@ -7,7 +7,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from zotero_links import TermLink, zotero_item_url, zotero_pdf_url
+from md_render import normalize_plaintext
+from zotero_links import zotero_item_url, zotero_pdf_url
+
+KEY_TERMS_HEADING = "## 关键术语"
+LEGACY_KEY_TERMS_HEADING = "## 关键术语 · 原文定位"
+
+
+def clean_terms(terms: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    for term in terms:
+        t = re.sub(r"\s+", " ", term.strip())
+        if len(t) >= 2:
+            cleaned.append(t)
+    return cleaned[:8]
+
+
+def render_key_terms_section(terms: list[str]) -> list[str]:
+    lines = [KEY_TERMS_HEADING, ""]
+    for term in terms:
+        lines.append(f"- {term}")
+    lines.append("")
+    return lines
 
 
 def slugify(text: str, max_len: int = 40) -> str:
@@ -34,7 +55,7 @@ def build_markdown(
     item: dict[str, Any],
     briefing: str,
     sections: list[dict[str, str]],
-    term_links: list[TermLink],
+    key_terms: list[str],
     pdf_attach_key: str | None,
 ) -> str:
     data = item["data"]
@@ -47,7 +68,7 @@ def build_markdown(
     ) or "未知作者"
     journal = data.get("publicationTitle") or data.get("proceedingsTitle") or "未知来源"
     year = (data.get("date") or "")[:4]
-    abstract = (data.get("abstractNote") or "").strip()
+    abstract = normalize_plaintext((data.get("abstractNote") or "").strip())
 
     lines = [
         f"# {title}",
@@ -75,18 +96,7 @@ def build_markdown(
             lines.append(body)
             lines.append("")
 
-    lines.append("## 关键术语 · 原文定位")
-    lines.append("")
-    for link in term_links:
-        source_note = {
-            "annotation": "PDF 高亮注释",
-            "fulltext": "PDF 全文检索",
-            "item": "条目（未精确定位）",
-        }.get(link.source, "")
-        lines.append(f"- **[{link.term}]({link.url})** — {source_note}")
-        if link.snippet:
-            lines.append(f"  - 片段：{link.snippet}")
-    lines.append("")
+    lines.extend(render_key_terms_section(key_terms))
 
     lines.append("## 快捷入口")
     lines.append("")
@@ -139,13 +149,13 @@ def write_outputs(
     item: dict[str, Any],
     briefing: str,
     sections: list[dict[str, str]],
-    term_links: list[TermLink],
+    key_terms: list[str],
     pdf_attach_key: str | None,
 ) -> tuple[Path, Path]:
     title = item["data"].get("title", "无标题")
     md_path, hub_path = summary_paths(summaries_dir, hubs_dir, item["key"], title)
     note_id = md_path.stem
-    md_content = build_markdown(item, briefing, sections, term_links, pdf_attach_key)
+    md_content = build_markdown(item, briefing, sections, key_terms, pdf_attach_key)
     md_path.write_text(md_content, encoding="utf-8")
     hub_path.write_text(build_hub_html(note_id), encoding="utf-8")
     return md_path, hub_path

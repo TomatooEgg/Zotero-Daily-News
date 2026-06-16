@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from config_manager import load_config
+from net_env import ensure_local_no_proxy
 from url_handler import deeplink_from_argv, install_macos_url_handler, note_path
 
 PORT = int((load_config().get("ui") or {}).get("port", 18765))
@@ -22,6 +23,7 @@ def _port_free(port: int) -> bool:
 def _wait_server(url: str, timeout: float = 15.0) -> bool:
     import urllib.request
 
+    ensure_local_no_proxy()
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -33,6 +35,7 @@ def _wait_server(url: str, timeout: float = 15.0) -> bool:
 
 
 def main() -> None:
+    ensure_local_no_proxy()
     from app import app
 
     base_url = f"http://127.0.0.1:{PORT}"

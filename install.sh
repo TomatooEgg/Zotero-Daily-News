@@ -69,7 +69,7 @@ echo "==> 生成并加载 launchd 定时任务"
 cd "$PROJECT_DIR"
 "$VENV/bin/python" -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); ok,m=reload_launchd(c); print(m)"
 
-chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/digest.py" "$PROJECT_DIR/app.py"
+chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/prepare_queue.sh" "$PROJECT_DIR/digest.py" "$PROJECT_DIR/app.py"
 
 echo "==> 构建桌面应用"
 bash "$PROJECT_DIR/build_app.sh"

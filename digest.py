@@ -13,18 +13,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from openai import OpenAI
-from pyzotero import zotero
 
 from config_manager import (
     SCRIPT_DIR,
     build_summary_prompt,
+    deepseek_briefing_model,
     load_config,
     resolve_output_dirs,
 )
+from net_env import connect_zotero
 from notifier import diagnose as notify_diagnose
 from notifier import emit_notify_payload, notify_macos
-from summary_io import parse_llm_summary, write_outputs
-from zotero_links import clean_terms, get_pdf_attachment, resolve_term_links
+from summary_io import clean_terms, parse_llm_summary, write_outputs
+from zotero_links import get_pdf_attachment
 
 HISTORY_PATH = SCRIPT_DIR / "history.json"
 ENV_PATH = SCRIPT_DIR / ".env"
@@ -69,10 +70,6 @@ def record_pushed(history: dict, keys: list[str]) -> None:
     for key in keys:
         history["items"][key] = now
     save_history(history)
-
-
-def connect_zotero() -> zotero.Zotero:
-    return zotero.Zotero(library_id=0, library_type="user", local=True)
 
 
 def item_has_tag(item: dict, tag: str) -> bool:
@@ -171,7 +168,7 @@ def build_llm_context(item: dict) -> str:
 def generate_full_summary(client: OpenAI, item: dict, config: dict) -> dict:
     context = build_llm_context(item)
     prompt = build_summary_prompt(config, context)
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = deepseek_briefing_model(config)
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -288,7 +285,6 @@ def run(
         briefing = re.sub(r"\s+", " ", (summary.get("briefing") or metadata_summary(item)).strip())
         sections = summary.get("sections") or []
         terms = clean_terms(summary.get("key_terms") or [])
-        term_links = resolve_term_links(zot, item["key"], terms) if terms else []
 
         md_path, hub_path = write_outputs(
             summaries_dir,
@@ -296,7 +292,7 @@ def run(
             item,
             briefing,
             sections,
-            term_links,
+            terms,
             pdf_key,
         )
 
@@ -356,12 +352,62 @@ def main() -> None:
         action="store_true",
         help="不发送通知，改为向 stdout 输出 @@NOTIFY@@ 行供父进程处理",
     )
+    parser.add_argument(
+        "--refresh-queue",
+        action="store_true",
+        help="随机刷新待推清单（固定 item_key 列表）",
+    )
+    parser.add_argument(
+        "--prepare-queue",
+        action="store_true",
+        help="为待推清单前 count 篇预生成简报与深度解读",
+    )
+    parser.add_argument(
+        "--push-queue",
+        action="store_true",
+        help="从待推清单推送（定时任务默认使用）",
+    )
     args = parser.parse_args()
     if args.diagnose_notify:
         notify_diagnose()
         sys.exit(0)
     if args.test_notify:
         sys.exit(test_notification(verbose=args.verbose_notify))
+    if args.prepare_queue:
+        from queue_manager import prepare_queue, refresh_queue
+
+        if args.refresh_queue or args.force or not __import__("queue_manager").load_queue():
+            refresh_queue(force=args.force)
+        prepare_queue(skip_llm=args.metadata_only)
+        sys.exit(0)
+    if args.refresh_queue:
+        from queue_manager import refresh_queue
+
+        refresh_queue(force=args.force)
+        print("待推清单已刷新")
+        sys.exit(0)
+    if args.push_queue:
+        from queue_manager import prepare_queue, push_from_queue, refresh_queue
+
+        if args.force:
+            sys.exit(
+                run(
+                    dry_run=args.dry_run,
+                    skip_llm=args.metadata_only,
+                    force=True,
+                    no_notify=args.no_notify,
+                )
+            )
+        if not __import__("queue_manager").load_queue():
+            refresh_queue()
+            prepare_queue(skip_llm=args.metadata_only)
+        sys.exit(
+            push_from_queue(
+                dry_run=args.dry_run,
+                no_notify=args.no_notify,
+                force_prepare=True,
+            )
+        )
     sys.exit(
         run(
             dry_run=args.dry_run,

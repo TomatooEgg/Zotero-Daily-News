@@ -8,19 +8,16 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
-from pyzotero import zotero
 
-from config_manager import load_config, SCRIPT_DIR
+from config_manager import deepseek_briefing_model, load_config, SCRIPT_DIR
 from digest import load_dotenv
+from net_env import connect_zotero
+from md_render import normalize_plaintext
 from notes_index import get_note
 
 ENV_PATH = SCRIPT_DIR / ".env"
 ZH_START = "<!-- zh-abstract -->"
 ZH_END = "<!-- /zh-abstract -->"
-
-
-def connect_zotero() -> zotero.Zotero:
-    return zotero.Zotero(library_id=0, library_type="user", local=True)
 
 
 def has_abstract_zh(md_text: str) -> bool:
@@ -45,7 +42,7 @@ def extract_original_abstract(md_text: str) -> str | None:
     match = re.search(r"## 摘要\s*\n\n(.*?)(?:\n## |\n<!-- zh-abstract -->|\Z)", md_text, re.DOTALL)
     if not match:
         return None
-    text = match.group(1).strip()
+    text = normalize_plaintext(match.group(1).strip())
     return text or None
 
 
@@ -77,7 +74,7 @@ def translate_abstract(client: OpenAI, abstract: str, config: dict) -> str:
     if is_mostly_chinese(abstract):
         return abstract.strip()
 
-    model = config.get("deepseek", {}).get("model", "deepseek-chat")
+    model = deepseek_briefing_model(config)
     prompt = (
         "你是学术翻译助手。将以下文献摘要翻译为流畅、准确的中文。\n"
         "要求：只输出译文，不要标题、不要解释、不要 JSON。\n\n"

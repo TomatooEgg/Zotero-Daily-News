@@ -6,8 +6,6 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-import markdown
-
 from abstract_zh import (
     extract_abstract_zh,
     extract_original_abstract,
@@ -16,6 +14,7 @@ from abstract_zh import (
 )
 from config_manager import load_config
 from deep_read import deep_read_to_html, extract_deep_read_md, has_deep_read, strip_deep_read_md
+from md_render import markdown_to_html, prepare_overview_markdown
 from notes_index import get_note
 from url_handler import deeplink_for_note
 from zotero_links import get_pdf_attachment, zotero_item_url, zotero_pdf_url
@@ -34,7 +33,7 @@ def parse_pdf_url_from_md(md_text: str) -> str:
 
 def resolve_pdf_url(md_text: str, item_key: str) -> str:
     try:
-        from deep_read import connect_zotero
+        from net_env import connect_zotero
 
         zot = connect_zotero()
         pdf = get_pdf_attachment(zot, item_key)
@@ -58,11 +57,8 @@ def prepare_note_view_context(
 
     md_path = Path(entry.md_path)
     md_text = md_path.read_text(encoding="utf-8", errors="replace")
-    overview_md = strip_abstract_zh_md(strip_deep_read_md(md_text))
-    html_body = markdown.markdown(
-        overview_md,
-        extensions=["extra", "nl2br", "sane_lists"],
-    )
+    overview_md = prepare_overview_markdown(strip_abstract_zh_md(strip_deep_read_md(md_text)))
+    html_body = markdown_to_html(overview_md)
     deep_md = extract_deep_read_md(md_text)
     deep_read_html = deep_read_to_html(deep_md) if deep_md else ""
     abstract_zh = extract_abstract_zh(md_text) or ""

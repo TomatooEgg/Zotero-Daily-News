@@ -66,6 +66,13 @@
   margin: 16px 0 20px;
 }
 
+.note-view-root .deep-read-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .note-view-root .btn-deep-read {
   border: none;
   cursor: pointer;
@@ -83,6 +90,37 @@
   cursor: wait;
 }
 
+.note-view-root .btn-deep-read-regen {
+  border: 1px solid var(--nv-border);
+  cursor: pointer;
+  background: #fff;
+  color: var(--nv-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 18px;
+  line-height: 1;
+  font-family: inherit;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.note-view-root .btn-deep-read-regen:hover:not(:disabled) {
+  color: var(--nv-accent);
+  border-color: var(--nv-accent);
+}
+
+.note-view-root .btn-deep-read-regen:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.note-view-root .btn-deep-read-regen[hidden] {
+  display: none;
+}
+
 .note-view-root .deep-read-panel {
   display: none;
   margin-top: 14px;
@@ -98,6 +136,44 @@
 
 .note-view-root .deep-read-panel .content {
   margin: 0;
+}
+
+.note-view-root .content .mermaid,
+.note-view-root .deep-read-panel .content .mermaid {
+  margin: 16px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.note-view-root .content table,
+.note-view-root .deep-read-panel .content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.note-view-root .content th,
+.note-view-root .content td,
+.note-view-root .deep-read-panel .content th,
+.note-view-root .deep-read-panel .content td {
+  border: 1px solid var(--nv-border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.note-view-root .content th,
+.note-view-root .deep-read-panel .content th {
+  background: var(--nv-bg);
+  font-weight: 600;
+}
+
+.note-view-root .content .mermaid svg,
+.note-view-root .deep-read-panel .content .mermaid svg {
+  max-width: 100%;
+  height: auto;
 }
 
 .note-view-root .deep-read-loading {
