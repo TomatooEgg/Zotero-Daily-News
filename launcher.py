@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any
 
+from app_bridge import set_yield_focus
 from config_manager import load_config
 from net_env import ensure_local_no_proxy
 from url_handler import deeplink_from_argv, install_macos_url_handler, note_path
@@ -50,6 +51,17 @@ def main() -> None:
         window.show()
 
     install_macos_url_handler(open_note)
+
+    def yield_focus() -> None:
+        window = state.get("window")
+        if window is None:
+            return
+        try:
+            window.minimize()
+        except Exception:
+            pass
+
+    set_yield_focus(yield_focus)
 
     def run_flask() -> None:
         app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)

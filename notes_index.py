@@ -124,6 +124,23 @@ def get_note(note_id: str) -> NoteEntry | None:
     return None
 
 
+def latest_notes_by_item_key() -> dict[str, NoteEntry]:
+    """按 item_key 索引最近一条仍存在的简报（list_notes 已按 mtime 降序）。"""
+    index: dict[str, NoteEntry] = {}
+    for entry in list_notes():
+        if entry.item_key not in index and Path(entry.md_path).is_file():
+            index[entry.item_key] = entry
+    return index
+
+
+def find_note_by_item_key(item_key: str) -> NoteEntry | None:
+    """返回该 Zotero 条目最近一条未删除的简报，不存在则 None。"""
+    for entry in list_notes():
+        if entry.item_key == item_key:
+            return entry
+    return None
+
+
 def _valid_note_id(note_id: str) -> bool:
     return bool(DATE_RE.match(f"{note_id}.md"))
 

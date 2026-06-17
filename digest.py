@@ -24,7 +24,8 @@ from config_manager import (
 from net_env import connect_zotero
 from notifier import diagnose as notify_diagnose
 from notifier import emit_notify_payload, notify_macos
-from summary_io import clean_terms, parse_llm_summary, write_outputs
+from notes_index import find_note_by_item_key
+from summary_io import clean_terms, ensure_hub_path, parse_llm_summary, write_outputs
 from zotero_links import get_pdf_attachment
 
 HISTORY_PATH = SCRIPT_DIR / "history.json"
@@ -269,8 +270,32 @@ def run(
         data = item["data"]
         title = data.get("title", "无标题")
         subtitle = format_authors(data.get("creators", []))
+        item_key = item["key"]
 
-        pdf = get_pdf_attachment(zot, item["key"])
+        existing = find_note_by_item_key(item_key)
+        if existing:
+            hub_path = ensure_hub_path(existing.id, hubs_dir, existing.hub_path)
+            briefing = re.sub(
+                r"\s+",
+                " ",
+                (existing.briefing or metadata_summary(item)).strip(),
+            )
+            notify_title = f"📚 今日文献 ({idx}/{total})"
+            emit_notification(
+                title=notify_title,
+                subtitle=title[:80] + ("…" if len(title) > 80 else ""),
+                message=briefing,
+                hub_path=hub_path,
+                dry_run=dry_run,
+                no_notify=no_notify,
+            )
+            picked_keys.append(item_key)
+            print(f"已推送（复用已有简报）: {title}")
+            print(f"  详细总结: {existing.md_path}")
+            print(f"  中转页:   {hub_path}")
+            continue
+
+        pdf = get_pdf_attachment(zot, item_key)
         pdf_key = pdf["key"] if pdf else None
 
         if skip_llm or client is None:

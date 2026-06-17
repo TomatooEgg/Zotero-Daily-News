@@ -145,6 +145,12 @@
   text-align: center;
 }
 
+.note-view-root .mermaid-fallback-hint {
+  margin: -8px 0 16px;
+  font-size: 13px;
+  color: #888;
+}
+
 .note-view-root .content table,
 .note-view-root .deep-read-panel .content table {
   width: 100%;

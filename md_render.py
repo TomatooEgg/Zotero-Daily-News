@@ -7,6 +7,8 @@ import re
 
 import markdown
 
+from mermaid_sanitize import escape_bare_underscores
+
 _MD_EXTENSIONS = ["extra", "nl2br", "sane_lists"]
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
 _TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$")
@@ -66,7 +68,8 @@ def ensure_blank_line_before_tables(md: str) -> str:
 
 
 def markdown_to_html(md: str) -> str:
+    prepared = escape_bare_underscores(ensure_blank_line_before_tables(md))
     return markdown.markdown(
-        ensure_blank_line_before_tables(md),
+        prepared,
         extensions=_MD_EXTENSIONS,
     )

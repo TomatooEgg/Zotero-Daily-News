@@ -14,7 +14,8 @@ from openai import OpenAI
 
 from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
 from net_env import connect_zotero
-from summary_io import clean_terms, write_outputs
+from notes_index import NoteEntry, latest_notes_by_item_key
+from summary_io import clean_terms, ensure_hub_path, write_outputs
 from zotero_links import get_pdf_attachment
 
 QUEUE_PATH = SCRIPT_DIR / "queue.json"
@@ -146,6 +147,47 @@ def _prepare_deep_read_only(entry: dict[str, Any], config: dict[str, Any]) -> No
         print(f"深度解读预生成失败 ({entry['item_key']}): {exc}", file=sys.stderr)
 
 
+def _apply_existing_summary(
+    entry: dict[str, Any],
+    existing: NoteEntry,
+    *,
+    hubs_dir: Path,
+    zot,
+    pre_deep_read: bool,
+    config: dict[str, Any],
+) -> bool:
+    """若已有简报文件则复用，跳过 LLM。返回是否已复用。"""
+    item_key = entry["item_key"]
+    item = _find_zotero_item(zot, item_key)
+    if not item:
+        entry["status"] = STATUS_ERROR
+        entry["error"] = "Zotero 条目不存在或已删除"
+        return True
+
+    data = item["data"]
+    entry["title"] = data.get("title", entry.get("title") or "无标题")
+    from digest import format_authors
+
+    entry["authors"] = format_authors(data.get("creators", []))
+    entry["has_pdf"] = get_pdf_attachment(zot, item_key) is not None
+
+    hub_path = ensure_hub_path(existing.id, hubs_dir, existing.hub_path)
+    entry["status"] = STATUS_READY
+    entry["note_id"] = existing.id
+    entry["hub_path"] = str(hub_path)
+    entry["briefing"] = existing.briefing or entry["title"]
+    entry["error"] = None
+
+    if pre_deep_read:
+        _prepare_deep_read_only(entry, config)
+    else:
+        entry["deep_read"] = DEEP_SKIPPED
+        entry["deep_read_error"] = None
+
+    print(f"复用已有简报: {entry['title']} ({existing.id})")
+    return True
+
+
 def _prepare_one(
     entry: dict[str, Any],
     *,
@@ -156,10 +198,22 @@ def _prepare_one(
     hubs_dir: Path,
     skip_llm: bool,
     pre_deep_read: bool,
+    existing: NoteEntry | None = None,
 ) -> None:
     from digest import generate_full_summary, metadata_only_summary, metadata_summary
 
     item_key = entry["item_key"]
+    if existing:
+        _apply_existing_summary(
+            entry,
+            existing,
+            hubs_dir=hubs_dir,
+            zot=zot,
+            pre_deep_read=pre_deep_read,
+            config=config,
+        )
+        return
+
     item = _find_zotero_item(zot, item_key)
     if not item:
         entry["status"] = STATUS_ERROR
@@ -246,6 +300,7 @@ def prepare_queue(
             client = OpenAI(api_key=api_key, base_url=ds.get("base_url", "https://api.deepseek.com"))
 
     zot = connect_zotero()
+    existing_by_key = latest_notes_by_item_key()
     prepared = 0
     for entry in queue["items"][:push_count]:
         if entry.get("status") == STATUS_PUSHED:
@@ -266,6 +321,7 @@ def prepare_queue(
             hubs_dir=hubs_dir,
             skip_llm=skip_llm,
             pre_deep_read=settings["pre_generate_deep_read"],
+            existing=existing_by_key.get(entry["item_key"]),
         )
         prepared += 1
 

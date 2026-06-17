@@ -18,7 +18,9 @@ from launchd_mgr import launchd_status, reload_launchd
 from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
+from app_bridge import yield_focus_to_external_app
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
+from zotero_open import open_zotero_deeplink
 from zotero_push import push_digest_note, push_status
 
 app = Flask(__name__)
@@ -225,7 +227,11 @@ def api_open_url():
     url = (data.get("url") or "").strip()
     if not url or not url.startswith(ALLOWED_OPEN_SCHEMES):
         return jsonify({"error": "不支持的链接"}), 400
-    subprocess.run(["open", url], check=False, timeout=5)
+    if url.startswith("zotero://"):
+        open_zotero_deeplink(url)
+        yield_focus_to_external_app()
+    else:
+        subprocess.run(["open", url], check=False, timeout=5)
     return jsonify({"ok": True})
 
 

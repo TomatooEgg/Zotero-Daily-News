@@ -11,7 +11,7 @@ from openai import OpenAI
 
 from config_manager import (
     SCRIPT_DIR,
-    build_pdf_summary_prompt,
+    build_pdf_summary_messages,
     deepseek_deep_read_model,
     load_config,
 )
@@ -20,12 +20,15 @@ from net_env import connect_zotero
 from notes_index import get_note
 from pdf_text import extract_pdf_text
 from md_render import markdown_to_html
+from mermaid_sanitize import sanitize_deep_read_body
 from summary_io import (
     KEY_TERMS_HEADING,
     LEGACY_KEY_TERMS_HEADING,
     build_hub_html,
     clean_terms,
+    is_malformed_llm_sections,
     parse_llm_summary,
+    repair_sections_from_json_blob,
     render_key_terms_section,
 )
 from zotero_links import get_pdf_attachment
@@ -147,23 +150,7 @@ def _parse_key_terms(md_text: str) -> list[str]:
     return terms
 
 
-def _parse_briefing(md_text: str) -> str:
-    match = re.search(r"^>\s*\*\*头条简报\*\*[：:]\s*(.+)$", md_text, re.MULTILINE)
-    return match.group(1).strip() if match else ""
-
-
-def _parse_sections(md_text: str) -> list[dict[str, str]]:
-    start = md_text.find("\n## 速览解读\n")
-    if start == -1:
-        return []
-    end = _deep_read_start(md_text)
-    if end == -1:
-        end = _key_terms_end(md_text, start)
-    if end == -1:
-        chunk = md_text[start:]
-    else:
-        chunk = md_text[start:end]
-
+def _split_md_sections(chunk: str) -> list[dict[str, str]]:
     sections: list[dict[str, str]] = []
     parts = re.split(r"\n### ", chunk)
     for part in parts[1:]:
@@ -175,8 +162,66 @@ def _parse_sections(md_text: str) -> list[dict[str, str]]:
     return sections
 
 
+def _close_open_mermaid_fence(body: str) -> str:
+    if "```mermaid" not in body:
+        return body
+    if re.search(r"```mermaid[\s\S]*?```", body):
+        return body
+    return body.rstrip() + "\n```\n"
+
+
 def _sections_have_body(sections: list[dict[str, str]]) -> bool:
     return any(str(sec.get("body", "")).strip() for sec in sections)
+
+
+def _normalize_sections(sections: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "heading": str(sec.get("heading", "")).strip(),
+            "body": sanitize_deep_read_body(
+                _close_open_mermaid_fence(str(sec.get("body", "")).strip())
+            ),
+        }
+        for sec in sections
+    ]
+
+
+def persist_note_md(entry, md_text: str) -> None:
+    md_path = Path(entry.md_path)
+    md_path.write_text(md_text, encoding="utf-8")
+    if entry.hub_path:
+        Path(entry.hub_path).write_text(build_hub_html(entry.id), encoding="utf-8")
+
+
+def _extract_pdf_source_from_deep_md(deep_md: str) -> str:
+    match = re.search(r"^\*正文来源：(.+?)\*$", deep_md, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def repair_deep_read_md(md_text: str) -> tuple[str, bool]:
+    """将误存为 JSON 正文的深度解读修复为正常 Markdown 结构。"""
+    deep_md = extract_deep_read_md(md_text)
+    if not deep_md:
+        return md_text, False
+
+    sections = _split_md_sections(deep_md)
+    if not is_malformed_llm_sections(sections):
+        return md_text, False
+
+    repaired = repair_sections_from_json_blob(str(sections[0].get("body", "")))
+    if not repaired or not _sections_have_body(repaired.get("sections") or []):
+        return md_text, False
+
+    pdf_source = _extract_pdf_source_from_deep_md(deep_md)
+    sections = _normalize_sections(repaired["sections"])
+    updated = insert_deep_read_md(md_text, sections, pdf_source)
+    terms = clean_terms(repaired.get("key_terms") or [])
+    if terms:
+        updated = _update_key_terms_section(
+            updated,
+            merge_key_terms(terms, _parse_key_terms(md_text)),
+        )
+    return updated, True
 
 
 def merge_key_terms(primary: list[str], secondary: list[str]) -> list[str]:
@@ -208,13 +253,13 @@ def generate_pdf_summary(
         raise RuntimeError(pdf_source or "无法提取 PDF 正文")
 
     context = build_llm_context(item)
-    prompt = build_pdf_summary_prompt(config, context, pdf_text, pdf_source)
+    messages = build_pdf_summary_messages(config, context, pdf_text, pdf_source)
     model = deepseek_deep_read_model(config)
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         temperature=0.5,
-        max_tokens=4000,
+        max_tokens=6000,
         response_format={"type": "json_object"},
     )
     raw = (response.choices[0].message.content or "").strip()
@@ -236,9 +281,14 @@ def generate_deep_read(note_id: str, *, regenerate: bool = False) -> dict[str, A
     md_text = md_path.read_text(encoding="utf-8")
 
     if has_deep_read(md_text) and not regenerate:
+        repaired_md, was_repaired = repair_deep_read_md(md_text)
+        if was_repaired:
+            persist_note_md(entry, repaired_md)
+            md_text = repaired_md
         deep_md = extract_deep_read_md(md_text) or ""
         return {
             "cached": True,
+            "repaired": was_repaired,
             "html": deep_read_to_html(deep_md),
             "markdown": deep_md,
         }
@@ -265,7 +315,7 @@ def generate_deep_read(note_id: str, *, regenerate: bool = False) -> dict[str, A
     if not pdf_summary:
         raise RuntimeError("PDF 深度解读未启用")
 
-    sections = pdf_summary.get("sections") or []
+    sections = _normalize_sections(pdf_summary.get("sections") or [])
     if not _sections_have_body(sections):
         raise RuntimeError("深度解读生成结果为空，请稍后重试")
 
@@ -279,11 +329,7 @@ def generate_deep_read(note_id: str, *, regenerate: bool = False) -> dict[str, A
     updated_md = insert_deep_read_md(md_text, sections, pdf_source)
     if terms:
         updated_md = _update_key_terms_section(updated_md, terms)
-    md_path.write_text(updated_md, encoding="utf-8")
-
-    if entry.hub_path:
-        hub_path = Path(entry.hub_path)
-        hub_path.write_text(build_hub_html(entry.id), encoding="utf-8")
+    persist_note_md(entry, updated_md)
 
     deep_md = extract_deep_read_md(updated_md) or ""
     return {

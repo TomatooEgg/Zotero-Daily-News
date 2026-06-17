@@ -135,6 +135,26 @@
     return mermaidLoadPromise;
   }
 
+  function normalizeMermaidSource(source) {
+    return source
+      .replace(/\[\\"/g, '["')
+      .replace(/\\"\]/g, '"]')
+      .replace(/\["([^"\]]+)\\?\]$/gm, '["$1"]');
+  }
+
+  function showMermaidFallback(div, source) {
+    const pre = document.createElement('pre');
+    const codeEl = document.createElement('code');
+    codeEl.className = 'language-mermaid';
+    codeEl.textContent = source;
+    pre.appendChild(codeEl);
+    const hint = document.createElement('p');
+    hint.className = 'mermaid-fallback-hint';
+    hint.textContent = '流程图语法有误，已显示源码。';
+    div.replaceWith(pre);
+    pre.after(hint);
+  }
+
   async function renderMermaidInContainer(container) {
     if (!container) return;
     const codes = container.querySelectorAll(
@@ -153,18 +173,22 @@
       const pre = code.parentElement;
       if (!pre || pre.dataset.mermaidSource === '1') return;
       pre.dataset.mermaidSource = '1';
+      const source = normalizeMermaidSource(code.textContent);
       const div = document.createElement('div');
       div.className = 'mermaid';
-      div.textContent = code.textContent;
+      div.textContent = source;
+      div.dataset.mermaidSourceText = source;
       pre.replaceWith(div);
       nodes.push(div);
     });
 
-    if (!nodes.length) return;
-    try {
-      await window.mermaid.run({ nodes: nodes });
-    } catch (err) {
-      console.error('Mermaid render error:', err);
+    for (const div of nodes) {
+      try {
+        await window.mermaid.run({ nodes: [div] });
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+        showMermaidFallback(div, div.dataset.mermaidSourceText || div.textContent || '');
+      }
     }
   }
 

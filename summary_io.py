@@ -118,29 +118,223 @@ def build_hub_html(note_id: str) -> str:
     return html
 
 
-def parse_llm_summary(raw: str) -> dict[str, Any]:
+def _unescape_json_string(value: str) -> str:
+    chars: list[str] = []
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == "\\" and i + 1 < len(value):
+            nxt = value[i + 1]
+            if nxt == "n":
+                chars.append("\n")
+            elif nxt == "t":
+                chars.append("\t")
+            elif nxt == "r":
+                chars.append("\r")
+            elif nxt == '"':
+                chars.append('"')
+            elif nxt == "\\":
+                chars.append("\\")
+            elif nxt == "/":
+                chars.append("/")
+            elif nxt == "u" and i + 5 < len(value):
+                chars.append(chr(int(value[i + 2 : i + 6], 16)))
+                i += 6
+                continue
+            else:
+                chars.append(ch)
+                chars.append(nxt)
+            i += 2
+        else:
+            chars.append(ch)
+            i += 1
+    return "".join(chars)
+
+
+def _extract_json_string_value(raw: str, key: str) -> tuple[str | None, str]:
+    if key:
+        match = re.search(rf'"{re.escape(key)}"\s*:\s*"', raw)
+        if not match:
+            return None, raw
+        i = match.end()
+    elif raw.startswith('"'):
+        i = 1
+    else:
+        return None, raw
+    chars: list[str] = []
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "\\" and i + 1 < len(raw):
+            chars.append(ch)
+            chars.append(raw[i + 1])
+            i += 2
+            continue
+        if ch == '"':
+            return _unescape_json_string("".join(chars)), raw[i + 1 :]
+        chars.append(ch)
+        i += 1
+    return None, raw
+
+
+def extract_sections_loose(raw: str) -> list[dict[str, str]] | None:
+    pos = raw.find('"sections"')
+    if pos == -1:
+        return None
+    chunk = raw[pos:]
+    sections: list[dict[str, str]] = []
+    while True:
+        heading_match = re.search(r'"heading"\s*:\s*"', chunk)
+        if not heading_match:
+            break
+        chunk = chunk[heading_match.start() :]
+        heading, rest = _extract_json_string_value(chunk, "heading")
+        if heading is None:
+            break
+        body_match = re.search(r'"body"\s*:\s*"', rest)
+        if not body_match:
+            break
+        body, rest = _extract_json_string_value(rest[body_match.start() :], "body")
+        if body is None:
+            break
+        sections.append({"heading": heading.strip(), "body": body.strip()})
+        chunk = rest
+    return sections or None
+
+
+def _extract_key_terms_loose(raw: str) -> list[str]:
+    match = re.search(r'"key_terms"\s*:\s*\[', raw)
+    if not match:
+        return []
+    rest = raw[match.end() :]
+    terms: list[str] = []
+    while rest:
+        rest = rest.lstrip(" \t\r\n,")
+        if not rest or rest[0] == "]":
+            break
+        if not rest.startswith('"'):
+            break
+        term, rest = _extract_json_string_value(rest, "")
+        if term is None:
+            break
+        terms.append(term.strip())
+    return clean_terms(terms)
+
+
+def _try_repair_json_text(raw: str) -> str | None:
     import json
 
-    raw = raw.strip()
-    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
-    if fence:
-        raw = fence.group(1)
-    else:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end != -1:
-            raw = raw[start : end + 1]
+    repaired = raw
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+    repaired = re.sub(r'\\"\]', r'\\\""]', repaired)
     try:
-        data = json.loads(raw)
+        json.loads(repaired)
+        return repaired
+    except json.JSONDecodeError:
+        return None
+
+
+def _extract_json_blob(raw: str) -> str:
+    text = raw.strip()
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fence:
+        return fence.group(1)
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text
+
+
+def is_raw_json_summary_blob(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.startswith("{") and '"sections"' in stripped
+
+
+def is_malformed_llm_sections(sections: list[dict[str, str]]) -> bool:
+    if len(sections) != 1:
+        return False
+    sec = sections[0]
+    heading = str(sec.get("heading", "")).strip()
+    body = str(sec.get("body", "")).strip()
+    if heading not in ("解读", ""):
+        return False
+    return is_raw_json_summary_blob(body)
+
+
+def repair_sections_from_json_blob(body: str) -> dict[str, Any] | None:
+    raw = _extract_json_blob(body)
+    parsed = _parse_llm_json(raw)
+    if parsed and parsed.get("sections"):
+        return parsed
+    sections = extract_sections_loose(raw)
+    if not sections:
+        return None
+    return {
+        "sections": sections,
+        "key_terms": _extract_key_terms_loose(raw),
+    }
+
+
+def _parse_llm_json(raw: str) -> dict[str, Any] | None:
+    import json
+
+    blob = _extract_json_blob(raw)
+    for candidate in (blob, _try_repair_json_text(blob)):
+        if not candidate:
+            continue
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
         if isinstance(data, dict):
             return data
-    except json.JSONDecodeError:
-        pass
+    sections = extract_sections_loose(blob)
+    if not sections:
+        return None
+    data: dict[str, Any] = {
+        "sections": sections,
+        "key_terms": _extract_key_terms_loose(blob),
+    }
+    briefing, _ = _extract_json_string_value(blob, "briefing")
+    if briefing:
+        data["briefing"] = briefing
+    return data
+
+
+def parse_llm_summary(raw: str) -> dict[str, Any]:
+    parsed = _parse_llm_json(raw)
+    if parsed:
+        sections = parsed.get("sections") or []
+        if sections and not is_malformed_llm_sections(sections):
+            return parsed
+        if is_malformed_llm_sections(sections):
+            repaired = repair_sections_from_json_blob(str(sections[0].get("body", "")))
+            if repaired and repaired.get("sections"):
+                merged = dict(parsed)
+                merged.update(repaired)
+                return merged
+        return parsed
+
+    blob = _extract_json_blob(raw)
     return {
-        "briefing": raw[:200],
-        "sections": [{"heading": "解读", "body": raw}],
+        "briefing": blob[:200],
+        "sections": [{"heading": "解读", "body": blob}],
         "key_terms": [],
     }
+
+
+def ensure_hub_path(
+    note_id: str,
+    hubs_dir: Path,
+    hub_path: str | None = None,
+) -> Path:
+    """确保中转页存在；缺失时按 note_id 重建。"""
+    path = Path(hub_path) if hub_path else hubs_dir / f"{note_id}.html"
+    if not path.is_file():
+        hubs_dir.mkdir(parents=True, exist_ok=True)
+        path = hubs_dir / f"{note_id}.html"
+        path.write_text(build_hub_html(note_id), encoding="utf-8")
+    return path
 
 
 def write_outputs(

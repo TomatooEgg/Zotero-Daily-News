@@ -31,30 +31,23 @@ DEFAULT_PROMPT = """你是学术阅读助手。根据文献元数据，生成中
 文献信息：
 {context}"""
 
-DEFAULT_PDF_PROMPT = """你是学术阅读助手。请根据文献元数据与 PDF 正文，生成深度中文解读。
+_PDF_PROMPT_PATH = SCRIPT_DIR / "prompts" / "pdf_summary_prompt.txt"
+PDF_PROMPT_INPUT_MARKER = "\n# 输入\n"
 
-请严格输出 JSON（不要其他文字）：
-{{
-  "sections": [
-    {{"heading": "研究背景与问题", "body": "3-5句"}},
-    {{"heading": "核心方法", "body": "4-6句，说明关键思路与技术细节"}},
-    {{"heading": "主要发现", "body": "4-6句，引用论文中的实验设置与结果"}},
-    {{"heading": "局限与启示", "body": "2-4句"}}
-  ],
-  "key_terms": ["专有名词1[English]", "专有名词2[English]", "专有名词3[English]"]
-}}
 
-要求：
-- 基于 PDF 正文解读，可引用具体方法、实验设置、数值结果
-- 若 PDF 文本不完整或被截断，在相应 section 中如实说明
-- key_terms 提取 5-8 个论文中的专有名词/方法名/数据集名，采用「中文[原文]」中英文对照形式
-- 全部使用中文
+def _load_default_pdf_prompt() -> str:
+    if _PDF_PROMPT_PATH.is_file():
+        return _PDF_PROMPT_PATH.read_text(encoding="utf-8").strip() + "\n"
+    return (
+        "你是学术阅读助手。请根据文献元数据与 PDF 正文，生成深度中文解读。\n\n"
+        "请严格输出 JSON（不要其他文字）：\n"
+        '{{\n  "sections": [...],\n  "key_terms": ["专有名词1[English]"]\n}}\n\n'
+        f"{PDF_PROMPT_INPUT_MARKER.strip()}\n"
+        "文献元数据：\n{context}\n\nPDF 正文（来源：{pdf_source}）：\n{pdf_text}\n"
+    )
 
-文献元数据：
-{context}
 
-PDF 正文（来源：{pdf_source}）：
-{pdf_text}"""
+DEFAULT_PDF_PROMPT = _load_default_pdf_prompt()
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "priority_tag": "want",
@@ -139,6 +132,19 @@ def build_summary_prompt(config: dict[str, Any], context: str) -> str:
     return template.replace("{context}", context)
 
 
+def _fill_pdf_summary_template(
+    template: str,
+    context: str,
+    pdf_text: str,
+    pdf_source: str,
+) -> str:
+    return (
+        template.replace("{context}", context)
+        .replace("{pdf_text}", pdf_text)
+        .replace("{pdf_source}", pdf_source)
+    )
+
+
 def build_pdf_summary_prompt(
     config: dict[str, Any],
     context: str,
@@ -146,11 +152,24 @@ def build_pdf_summary_prompt(
     pdf_source: str,
 ) -> str:
     template = config.get("pdf_summary_prompt") or DEFAULT_PDF_PROMPT
-    return (
-        template.replace("{context}", context)
-        .replace("{pdf_text}", pdf_text)
-        .replace("{pdf_source}", pdf_source)
-    )
+    return _fill_pdf_summary_template(template, context, pdf_text, pdf_source)
+
+
+def build_pdf_summary_messages(
+    config: dict[str, Any],
+    context: str,
+    pdf_text: str,
+    pdf_source: str,
+) -> list[dict[str, str]]:
+    filled = build_pdf_summary_prompt(config, context, pdf_text, pdf_source)
+    marker = PDF_PROMPT_INPUT_MARKER
+    if marker in filled:
+        system, user = filled.split(marker, 1)
+        return [
+            {"role": "system", "content": system.strip()},
+            {"role": "user", "content": (marker.strip() + user).strip()},
+        ]
+    return [{"role": "user", "content": filled}]
 
 
 def deepseek_briefing_model(config: dict[str, Any]) -> str:

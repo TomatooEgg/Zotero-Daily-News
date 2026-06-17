@@ -13,7 +13,14 @@ from abstract_zh import (
     strip_abstract_zh_md,
 )
 from config_manager import load_config
-from deep_read import deep_read_to_html, extract_deep_read_md, has_deep_read, strip_deep_read_md
+from deep_read import (
+    deep_read_to_html,
+    extract_deep_read_md,
+    has_deep_read,
+    persist_note_md,
+    repair_deep_read_md,
+    strip_deep_read_md,
+)
 from md_render import markdown_to_html, prepare_overview_markdown
 from notes_index import get_note
 from url_handler import deeplink_for_note
@@ -57,6 +64,10 @@ def prepare_note_view_context(
 
     md_path = Path(entry.md_path)
     md_text = md_path.read_text(encoding="utf-8", errors="replace")
+    repaired_md, was_repaired = repair_deep_read_md(md_text)
+    if was_repaired:
+        persist_note_md(entry, repaired_md)
+        md_text = repaired_md
     overview_md = prepare_overview_markdown(strip_abstract_zh_md(strip_deep_read_md(md_text)))
     html_body = markdown_to_html(overview_md)
     deep_md = extract_deep_read_md(md_text)
