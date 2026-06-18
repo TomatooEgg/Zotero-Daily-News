@@ -8,6 +8,7 @@ summaries/
 hubs/
 history.json
 queue.json
+pending_publish.json
 logs/
 *.log
 

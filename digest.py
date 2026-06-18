@@ -23,8 +23,9 @@ from config_manager import (
 )
 from net_env import connect_zotero
 from notifier import diagnose as notify_diagnose
-from notifier import emit_notify_payload, notify_macos
+from notifier import emit_notify_payload, notify_macos, SUMMARY_ACTION
 from notes_index import find_note_by_item_key
+from pending_publish import mark_pending
 from summary_io import clean_terms, ensure_hub_path, parse_llm_summary, write_outputs
 from zotero_links import get_pdf_attachment
 
@@ -195,9 +196,11 @@ def emit_notification(
     subtitle: str = "",
     hub_path: Path | None = None,
     *,
+    note_id: str | None = None,
+    item_key: str | None = None,
     dry_run: bool = False,
     no_notify: bool = False,
-) -> None:
+) -> str | None:
     if dry_run:
         notify_macos(
             title=title,
@@ -206,7 +209,7 @@ def emit_notification(
             hub_path=hub_path,
             dry_run=True,
         )
-        return
+        return SUMMARY_ACTION
     if no_notify:
         print(
             emit_notify_payload(
@@ -214,15 +217,45 @@ def emit_notification(
                 message=message,
                 subtitle=subtitle,
                 hub_path=hub_path,
+                note_id=note_id,
+                item_key=item_key,
             )
         )
-        return
-    notify_macos(
+        return None
+    _ok, action = notify_macos(
         title=title,
         message=message,
         subtitle=subtitle,
         hub_path=hub_path,
     )
+    return action
+
+
+def _record_if_published(
+    *,
+    item_key: str,
+    note_id: str,
+    action: str | None,
+    dry_run: bool,
+    no_notify: bool,
+    picked_keys: list[str],
+) -> None:
+    if dry_run:
+        picked_keys.append(item_key)
+        return
+    if no_notify:
+        return
+    from push_finalize import apply_push_action
+
+    if apply_push_action(
+        item_key=item_key,
+        note_id=note_id,
+        action=action,
+        update_queue=False,
+    ):
+        picked_keys.append(item_key)
+    else:
+        print(f"已推迟至下次推送: {item_key}（本地缓存已保留）")
 
 
 def run(
@@ -281,15 +314,24 @@ def run(
                 (existing.briefing or metadata_summary(item)).strip(),
             )
             notify_title = f"📚 今日文献 ({idx}/{total})"
-            emit_notification(
+            action = emit_notification(
                 title=notify_title,
                 subtitle=title[:80] + ("…" if len(title) > 80 else ""),
                 message=briefing,
                 hub_path=hub_path,
+                note_id=existing.id,
+                item_key=item_key,
                 dry_run=dry_run,
                 no_notify=no_notify,
             )
-            picked_keys.append(item_key)
+            _record_if_published(
+                item_key=item_key,
+                note_id=existing.id,
+                action=action,
+                dry_run=dry_run,
+                no_notify=no_notify,
+                picked_keys=picked_keys,
+            )
             print(f"已推送（复用已有简报）: {title}")
             print(f"  详细总结: {existing.md_path}")
             print(f"  中转页:   {hub_path}")
@@ -320,22 +362,33 @@ def run(
             terms,
             pdf_key,
         )
+        note_id = md_path.stem
+        mark_pending(note_id)
 
         notify_title = f"📚 今日文献 ({idx}/{total})"
-        emit_notification(
+        action = emit_notification(
             title=notify_title,
             subtitle=title[:80] + ("…" if len(title) > 80 else ""),
             message=briefing,
             hub_path=hub_path,
+            note_id=note_id,
+            item_key=item_key,
             dry_run=dry_run,
             no_notify=no_notify,
         )
-        picked_keys.append(item["key"])
+        _record_if_published(
+            item_key=item_key,
+            note_id=note_id,
+            action=action,
+            dry_run=dry_run,
+            no_notify=no_notify,
+            picked_keys=picked_keys,
+        )
         print(f"已推送: {title}")
         print(f"  详细总结: {md_path}")
         print(f"  中转页:   {hub_path}")
 
-    if not dry_run:
+    if not dry_run and not no_notify:
         record_pushed(history, picked_keys)
 
     return 0
@@ -350,7 +403,7 @@ def test_notification(verbose: bool = False) -> int:
         <p>点击通知后应看到此页面。</p></body></html>""",
         encoding="utf-8",
     )
-    ok = notify_macos(
+    ok, _action = notify_macos(
         title="Zotero 简报测试",
         subtitle="通知系统",
         message="如果你看到这条通知，说明推送正常。",

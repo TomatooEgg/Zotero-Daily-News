@@ -18,6 +18,7 @@ from launchd_mgr import launchd_status, reload_launchd
 from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
+from push_finalize import apply_push_results
 from app_bridge import yield_focus_to_external_app
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
 from zotero_open import open_zotero_deeplink
@@ -108,18 +109,19 @@ def python_cmd(*script_args: str) -> list[str]:
     return cmd
 
 
-def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str]:
-    """在主进程发送通知，返回 (成功数, 失败数, stderr 日志)。"""
+def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str, list[dict]]:
+    """在主进程发送通知，返回 (成功数, 失败数, stderr 日志, 逐条结果)。"""
     sent = 0
     failed = 0
     logs: list[str] = []
+    results: list[dict] = []
 
     for spec in specs:
         hub_raw = spec.get("hub_path")
         hub_path = Path(hub_raw) if hub_raw else None
         stderr_buf = io.StringIO()
         with contextlib.redirect_stderr(stderr_buf):
-            ok = notify_macos(
+            ok, action = notify_macos(
                 title=spec["title"],
                 message=spec.get("message", ""),
                 subtitle=spec.get("subtitle", ""),
@@ -133,8 +135,17 @@ def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str]:
             sent += 1
         else:
             failed += 1
+        note_id = spec.get("note_id")
+        if not note_id and hub_path:
+            note_id = hub_path.stem
+        results.append({
+            "item_key": spec.get("item_key"),
+            "note_id": note_id,
+            "action": action,
+            "ok": ok,
+        })
 
-    return sent, failed, "\n".join(logs)
+    return sent, failed, "\n".join(logs), results
 
 
 def create_test_hub() -> Path:
@@ -503,7 +514,8 @@ def api_run():
         env={**os.environ, **load_env()},
     )
     specs = parse_notify_stdout(result.stdout)
-    sent, failed, notify_stderr = dispatch_notifications(specs)
+    sent, failed, notify_stderr, notify_results = dispatch_notifications(specs)
+    published = apply_push_results(notify_results)
     combined_stderr = "\n".join(
         part for part in (result.stderr.strip(), notify_stderr.strip()) if part
     )
@@ -522,7 +534,7 @@ def api_test_notify():
     hub = create_test_hub()
     stderr_buf = io.StringIO()
     with contextlib.redirect_stderr(stderr_buf):
-        ok = notify_macos(
+        ok, _action = notify_macos(
             title="Zotero 简报测试",
             subtitle="通知系统",
             message="如果你看到这条通知，说明推送正常。",

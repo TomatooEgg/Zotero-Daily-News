@@ -15,6 +15,7 @@ from openai import OpenAI
 from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
 from net_env import connect_zotero
 from notes_index import NoteEntry, latest_notes_by_item_key
+from pending_publish import mark_pending
 from summary_io import clean_terms, ensure_hub_path, write_outputs
 from zotero_links import get_pdf_attachment
 
@@ -256,6 +257,7 @@ def _prepare_one(
         terms,
         pdf_key,
     )
+    mark_pending(md_path.stem)
 
     entry["status"] = STATUS_READY
     entry["note_id"] = md_path.stem
@@ -339,6 +341,7 @@ def push_from_queue(
 ) -> int:
     """从待推清单推送前 push_count 篇已就绪笔记。"""
     from digest import emit_notification, load_history, record_pushed
+    from push_finalize import apply_push_action
 
     config = load_config()
     settings = queue_settings(config)
@@ -387,23 +390,45 @@ def push_from_queue(
         hub_path = Path(entry["hub_path"])
         briefing = entry.get("briefing") or title
         subtitle = (entry.get("authors") or "")[:80]
+        note_id = entry.get("note_id") or hub_path.stem
+        item_key = entry.get("item_key")
 
         notify_title = f"📚 今日文献 ({idx}/{total})"
-        emit_notification(
+        action = emit_notification(
             title=notify_title,
             subtitle=title[:80] + ("…" if len(title) > 80 else ""),
             message=briefing,
             hub_path=hub_path,
+            note_id=note_id,
+            item_key=item_key,
             dry_run=dry_run,
             no_notify=no_notify,
         )
-        entry["status"] = STATUS_PUSHED
-        picked_keys.append(entry["item_key"])
-        print(f"已推送: {title}")
+        if dry_run:
+            entry["status"] = STATUS_PUSHED
+            if item_key:
+                picked_keys.append(item_key)
+            print(f"已推送: {title}")
+        elif no_notify:
+            print(f"待确认: {title}")
+        elif apply_push_action(
+            item_key=item_key,
+            note_id=note_id,
+            action=action,
+            update_queue=False,
+        ):
+            entry["status"] = STATUS_PUSHED
+            if item_key:
+                picked_keys.append(item_key)
+            print(f"已推送: {title}")
+        else:
+            print(f"已推迟至下次推送: {title}（本地缓存已保留）")
         print(f"  中转页:   {hub_path}")
 
-    if not dry_run:
+    if not dry_run and not no_notify:
         record_pushed(history, picked_keys)
+        save_queue(queue)
+    elif not dry_run and no_notify:
         save_queue(queue)
 
     return 0

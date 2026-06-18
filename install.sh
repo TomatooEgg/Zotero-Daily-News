@@ -45,7 +45,7 @@ else
 fi
 
 ALERTER="$BIN_DIR/alerter"
-echo "==> 安装 alerter（通知「查看总结」按钮）"
+echo "==> 安装 alerter（通知「查看总结」「下次再推」按钮）"
 if [[ -x "$ALERTER" ]]; then
   echo "    已存在"
 elif command -v alerter &>/dev/null; then

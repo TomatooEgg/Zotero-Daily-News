@@ -15,7 +15,21 @@ LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
 LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
 NOTIFY_PREFIX = "@@NOTIFY@@"
 SUMMARY_ACTION = "查看总结"
+DEFER_ACTION = "下次再推"
+IMMEDIATE_PUBLISH_ACTION = "@IMMEDIATE"
 OPEN_ON_ACTIONS = {SUMMARY_ACTION, "@CONTENTCLICKED", "@ACTIONCLICKED"}
+DEFER_ACTIONS = {DEFER_ACTION, "关闭", "@CLOSED", "@TIMEOUT"}
+
+
+def is_publish_action(action: str | None) -> bool:
+    if not action:
+        return False
+    text = action.strip()
+    if text in DEFER_ACTIONS:
+        return False
+    if text == IMMEDIATE_PUBLISH_ACTION:
+        return True
+    return text in OPEN_ON_ACTIONS
 
 # 常见 terminal-notifier  Mach-O 路径
 TN_CANDIDATES = [
@@ -83,6 +97,9 @@ def emit_notify_payload(
     message: str,
     subtitle: str = "",
     hub_path: Path | None = None,
+    *,
+    note_id: str | None = None,
+    item_key: str | None = None,
 ) -> str:
     payload: dict[str, str] = {
         "title": title,
@@ -91,6 +108,10 @@ def emit_notify_payload(
     }
     if hub_path:
         payload["hub_path"] = str(hub_path.resolve())
+    if note_id:
+        payload["note_id"] = note_id
+    if item_key:
+        payload["item_key"] = item_key
     return NOTIFY_PREFIX + json.dumps(payload, ensure_ascii=False)
 
 
@@ -115,7 +136,7 @@ def _notify_alerter(
     subtitle: str,
     hub_path: Path,
     verbose: bool,
-) -> bool:
+) -> str | None:
     group = f"zotero-digest-{hub_path.stem}"
     cmd = [
         str(binary),
@@ -124,7 +145,7 @@ def _notify_alerter(
         "--message",
         message,
         "--actions",
-        SUMMARY_ACTION,
+        f"{SUMMARY_ACTION},{DEFER_ACTION}",
         "--close-label",
         "关闭",
         "--timeout",
@@ -138,16 +159,16 @@ def _notify_alerter(
     result = subprocess.run(cmd, capture_output=True, text=True)
     action = (result.stdout or "").strip()
     if verbose:
-        print(f"[alerter] exit={result.returncode} action={action}", file=sys.stderr)
+        print(f"[alerter] exit={result.returncode} action={action!r}", file=sys.stderr)
         if result.stderr.strip():
             print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
     if result.returncode != 0:
         if verbose:
             print("[alerter] 失败，尝试降级到 terminal-notifier", file=sys.stderr)
-        return False
-    if hub_path.exists() and action in OPEN_ON_ACTIONS:
+        return None
+    if hub_path.exists() and is_publish_action(action):
         subprocess.run(["open", str(hub_path.resolve())], check=False)
-    return True
+    return action
 
 
 def _escape_applescript(text: str) -> str:
@@ -242,7 +263,7 @@ def notify_macos(
     hub_path: Path | None = None,
     dry_run: bool = False,
     verbose: bool = False,
-) -> bool:
+) -> tuple[bool, str | None]:
     if dry_run:
         print(f"\n[通知] {title}")
         if subtitle:
@@ -250,7 +271,8 @@ def notify_macos(
         print(f"  {message}")
         if hub_path:
             print(f"  按钮「{SUMMARY_ACTION}」→ {hub_path.resolve().as_uri()}")
-        return True
+            print(f"  按钮「{DEFER_ACTION}」→ 保留缓存，暂不写入 App 当日内容")
+        return True, SUMMARY_ACTION
 
     hub_uri = hub_path.resolve().as_uri() if hub_path and hub_path.exists() else None
     sender = detect_sender()
@@ -260,25 +282,26 @@ def notify_macos(
     if verbose:
         print(f"[notify] sender={sender} alerter={alerter} binary={binary}", file=sys.stderr)
 
-    # 1) alerter（带「查看总结」操作按钮）
+    # 1) alerter（带「查看总结」「下次再推」操作按钮）
     if alerter and hub_path and hub_path.exists():
-        if _notify_alerter(alerter, title, message, subtitle, hub_path, verbose):
-            return True
+        action = _notify_alerter(alerter, title, message, subtitle, hub_path, verbose)
+        if action is not None:
+            return True, action
 
-    # 2) terminal-notifier（点击通知正文跳转）
+    # 2) terminal-notifier（点击通知正文跳转；无推迟按钮，视为立即发布）
     if binary:
         if _notify_terminal_notifier(binary, title, message, subtitle, hub_uri, sender, verbose):
-            return True
+            return True, IMMEDIATE_PUBLISH_ACTION
         if _notify_terminal_notifier(binary, title, message, subtitle, None, sender, verbose):
             if hub_path and hub_path.exists():
                 subprocess.run(["open", str(hub_path.resolve())], check=False)
-            return True
+            return True, IMMEDIATE_PUBLISH_ACTION
 
     # 3) osascript（需在 系统设置→通知→脚本编辑器 或 终端 中允许）
     if _notify_osascript(title, message, subtitle, verbose):
         if hub_path and hub_path.exists():
             subprocess.run(["open", str(hub_path.resolve())], check=False)
-        return True
+        return True, IMMEDIATE_PUBLISH_ACTION
 
     # 4) 兜底：声音 + 打开页面
     _fallback_alert(hub_path, verbose)
@@ -286,12 +309,12 @@ def notify_macos(
         "\n未能弹出系统通知。请在「系统设置 → 通知」中开启以下任一应用的通知：\n"
         "  • 终端 (Terminal)\n"
         "  • 脚本编辑器 (Script Editor)\n"
-        "  • alerter（带「查看总结」按钮，推荐: brew install vjeantet/tap/alerter）\n"
+        "  • alerter（带「查看总结」「下次再推」按钮，推荐: brew install vjeantet/tap/alerter）\n"
         "  • terminal-notifier（若列表中有）\n"
         "然后重新运行: run.sh --test-notify --verbose-notify\n",
         file=sys.stderr,
     )
-    return False
+    return False, None
 
 
 def diagnose() -> None:

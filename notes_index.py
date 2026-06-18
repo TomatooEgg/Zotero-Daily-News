@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
+from pending_publish import is_pending
 
 HISTORY_PATH = SCRIPT_DIR / "history.json"
 
@@ -69,7 +70,7 @@ def _find_hub(hubs_dir: Path, stem: str) -> Path | None:
     return hub if hub.exists() else None
 
 
-def list_notes(date_filter: str | None = None) -> list[NoteEntry]:
+def list_notes(date_filter: str | None = None, *, include_pending: bool = False) -> list[NoteEntry]:
     config = load_config()
     summaries_dir, hubs_dir = resolve_output_dirs(config)
     entries: list[NoteEntry] = []
@@ -85,6 +86,8 @@ def list_notes(date_filter: str | None = None) -> list[NoteEntry]:
         if date_filter and iso_date != date_filter:
             continue
         stem = md_path.stem
+        if not include_pending and is_pending(stem):
+            continue
         title, briefing = _read_meta(md_path)
         hub = _find_hub(hubs_dir, stem)
         stat = md_path.stat()
@@ -118,7 +121,7 @@ def group_by_date(entries: list[NoteEntry]) -> list[dict]:
 
 
 def get_note(note_id: str) -> NoteEntry | None:
-    for entry in list_notes():
+    for entry in list_notes(include_pending=True):
         if entry.id == note_id:
             return entry
     return None
@@ -127,7 +130,7 @@ def get_note(note_id: str) -> NoteEntry | None:
 def latest_notes_by_item_key() -> dict[str, NoteEntry]:
     """按 item_key 索引最近一条仍存在的简报（list_notes 已按 mtime 降序）。"""
     index: dict[str, NoteEntry] = {}
-    for entry in list_notes():
+    for entry in list_notes(include_pending=True):
         if entry.item_key not in index and Path(entry.md_path).is_file():
             index[entry.item_key] = entry
     return index
@@ -135,7 +138,7 @@ def latest_notes_by_item_key() -> dict[str, NoteEntry]:
 
 def find_note_by_item_key(item_key: str) -> NoteEntry | None:
     """返回该 Zotero 条目最近一条未删除的简报，不存在则 None。"""
-    for entry in list_notes():
+    for entry in list_notes(include_pending=True):
         if entry.item_key == item_key:
             return entry
     return None
