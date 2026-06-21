@@ -25,7 +25,69 @@
       {% include "note_view_body.html" %}
     </div>
   </div>
+  {% if viewer == 'hub' %}
+  <script>
+  (function () {
+    function bindDigestAppInline() {
+      var el = document.querySelector('[data-role="digest-app"]');
+      if (!el || el.dataset.hubInlineBound === '1') return;
+      el.dataset.hubInlineBound = '1';
+      el.addEventListener('click', function (e) {
+        e.preventDefault();
+        var url = el.getAttribute('href');
+        if (!url) return;
+        var root = document.getElementById('note-view-root');
+        var apiBase = root && root.dataset.apiBase;
+        var noteId = '';
+        if (root) {
+          try {
+            noteId = JSON.parse(root.dataset.note || '{}').id || '';
+          } catch (_) {}
+        }
+        var opened = false;
+        var hintTimer = setTimeout(function () {
+          if (!opened) {
+            alert('若简报未启动，请先在项目目录运行 ./build_app.sh 注册深链接。');
+          }
+        }, 2500);
+        function goDeeplink() {
+          opened = true;
+          clearTimeout(hintTimer);
+          window.location.href = url;
+        }
+        if (apiBase && noteId && typeof fetch === 'function') {
+          fetch(apiBase + '/api/open-digest-app', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note_id: noteId }),
+          })
+            .then(function (res) {
+              if (res.ok) {
+                opened = true;
+                clearTimeout(hintTimer);
+                return;
+              }
+              goDeeplink();
+            })
+            .catch(goDeeplink);
+          return;
+        }
+        goDeeplink();
+      });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindDigestAppInline);
+    } else {
+      bindDigestAppInline();
+    }
+  })();
+  </script>
+  {% endif %}
   <script src="{{ static_base }}/note-view.js"></script>
-  <script>initNoteView(document.getElementById('note-view-root'));</script>
+  <script>
+    if (typeof initNoteView === 'function') {
+      initNoteView(document.getElementById('note-view-root'));
+    }
+  </script>
 </body>
 </html>

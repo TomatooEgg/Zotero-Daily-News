@@ -4,15 +4,18 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Zotero 简报.app"
+LINK_APP_NAME="Zotero Digest Link.app"
 STAGE="$PROJECT_DIR/dist/stage"
 APP_DIR="$STAGE/$APP_NAME"
+LINK_DIR="$STAGE/$LINK_APP_NAME"
 BUNDLE_APP="$APP_DIR/Contents/Resources/app"
 DMG_NAME="Zotero-Digest.dmg"
 DMG_PATH="$PROJECT_DIR/dist/$DMG_NAME"
 
 echo "==> 清理并创建 staging"
 rm -rf "$STAGE"
-mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
+  "$LINK_DIR/Contents/MacOS" "$LINK_DIR/Contents/Resources"
 
 echo "==> 复制项目文件"
 rsync -a \
@@ -24,6 +27,7 @@ rsync -a \
   --exclude 'logs/' \
   --exclude 'bin/' \
   --exclude 'Zotero 简报.app/' \
+  --exclude 'Zotero Digest Link.app/' \
   --exclude '.env' \
   --exclude 'history.json' \
   --exclude 'queue.json' \
@@ -84,13 +88,57 @@ else
 fi
 cd "$PROJECT" || exit 1
 PYTHON="$PROJECT/.venv/bin/python"
+SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
+if [ "$#" -gt 0 ]; then
+  mkdir -p "$SUPPORT_DIR"
+  osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
+    > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
+fi
 if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" "$PROJECT/launcher.py"
+  exec arch -arm64 "$PYTHON" "$PROJECT/launcher.py" "$@"
 else
-  exec "$PYTHON" "$PROJECT/launcher.py"
+  exec "$PYTHON" "$PROJECT/launcher.py" "$@"
 fi
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
+
+cat > "$LINK_DIR/Contents/MacOS/launcher" << 'LINK_LAUNCHER'
+#!/bin/bash
+BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
+if [[ -d "$BUNDLE/../Zotero 简报.app/Contents/Resources/app" ]]; then
+  PROJECT="$BUNDLE/../Zotero 简报.app/Contents/Resources/app"
+  MAIN_APP="$BUNDLE/../Zotero 简报.app"
+else
+  PROJECT="$(cat "$BUNDLE/Contents/Resources/project.path" 2>/dev/null || dirname "$BUNDLE")"
+  MAIN_APP="$PROJECT/Zotero 简报.app"
+fi
+cd "$PROJECT" || exit 1
+PYTHON="$PROJECT/.venv/bin/python"
+SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
+mkdir -p "$SUPPORT_DIR"
+osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
+  > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
+for arg in "$@"; do
+  case "$arg" in
+    zotero-digest:*)
+      echo "$(date '+%Y-%m-%d %H:%M:%S') shell handle $arg" >> "$SUPPORT_DIR/link.log" 2>/dev/null || true
+      if [[ -d "$MAIN_APP" ]]; then
+        open -g -a "$MAIN_APP" "$arg"
+      else
+        open -g "$arg"
+      fi
+      exit 0
+      ;;
+  esac
+done
+if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
+  exec arch -arm64 "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
+else
+  exec "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
+fi
+LINK_LAUNCHER
+chmod +x "$LINK_DIR/Contents/MacOS/launcher"
+echo "$BUNDLE_APP" > "$LINK_DIR/Contents/Resources/project.path"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -108,6 +156,27 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><false/>
+    <key>LSMultipleInstancesProhibited</key><true/>
+</dict>
+</plist>
+PLIST
+
+cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+    <key>CFBundleExecutable</key><string>launcher</string>
+    <key>CFBundleIdentifier</key><string>com.TomatooEgg.zotero-digest.link</string>
+    <key>CFBundleName</key><string>Zotero Digest Link</string>
+    <key>CFBundleDisplayName</key><string>Zotero Digest Link</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.1</string>
+    <key>CFBundleVersion</key><string>2</string>
+    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>LSUIElement</key><true/>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -118,10 +187,20 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     </array>
 </dict>
 </plist>
-PLIST
+LINK_PLIST
+
+# 注册深链接到 Link 中转（避免 dist 旧包占用 scheme）
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+STAGE_APP="$PROJECT_DIR/dist/stage/Zotero 简报.app"
+if [[ -x "$LSREGISTER" ]]; then
+  if [[ -d "$STAGE_APP" ]]; then
+    "$LSREGISTER" -u "$STAGE_APP" 2>/dev/null || true
+  fi
+  "$LSREGISTER" -f "$APP_DIR" 2>/dev/null || true
+  "$LSREGISTER" -f "$LINK_DIR" 2>/dev/null || true
+fi
 
 echo "==> 生成 DMG"
-rm -f "$DMG_PATH"
 hdiutil create \
   -volname "Zotero 简报" \
   -srcfolder "$STAGE" \

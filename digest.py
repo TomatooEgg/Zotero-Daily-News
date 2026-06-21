@@ -227,6 +227,7 @@ def emit_notification(
         message=message,
         subtitle=subtitle,
         hub_path=hub_path,
+        note_id=note_id or (hub_path.stem if hub_path else None),
     )
     return action
 

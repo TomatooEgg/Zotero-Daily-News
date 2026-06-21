@@ -78,7 +78,7 @@ def prepare_note_view_context(
     cfg = load_config()
     ui_port = int((cfg.get("ui") or {}).get("port", 18765))
     api_base = f"http://127.0.0.1:{ui_port}" if for_static_file else ""
-    static_base = f"{api_base}/static" if for_static_file else "/static"
+    static_base = "_assets" if for_static_file else "/static"
 
     pdf_url = resolve_pdf_url(md_text, entry.item_key)
     zotero_url = zotero_item_url(entry.item_key)

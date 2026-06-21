@@ -37,6 +37,21 @@ def _hub_file_exists(entry: dict[str, Any]) -> bool:
     return bool(raw and Path(raw).is_file())
 
 
+def _entries_in_push_window(
+    items: list[dict[str, Any]],
+    push_count: int,
+) -> list[dict[str, Any]]:
+    """下一批推送位：跳过已推送，取前 push_count 篇未推送条目。"""
+    window: list[dict[str, Any]] = []
+    for entry in items:
+        if entry.get("status") == STATUS_PUSHED:
+            continue
+        window.append(entry)
+        if len(window) >= push_count:
+            break
+    return window
+
+
 def load_queue() -> dict[str, Any] | None:
     if not QUEUE_PATH.exists():
         return None
@@ -276,7 +291,7 @@ def prepare_queue(
     *,
     skip_llm: bool = False,
     limit: int | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int]:
     """为待推清单前 push_count 篇预生成简报与深度解读。"""
     from digest import ENV_PATH, load_dotenv
 
@@ -304,9 +319,7 @@ def prepare_queue(
     zot = connect_zotero()
     existing_by_key = latest_notes_by_item_key()
     prepared = 0
-    for entry in queue["items"][:push_count]:
-        if entry.get("status") == STATUS_PUSHED:
-            continue
+    for entry in _entries_in_push_window(queue["items"], push_count):
         if entry.get("status") == STATUS_READY and entry.get("note_id") and _hub_file_exists(entry):
             if entry.get("deep_read") in (DEEP_READY, DEEP_SKIPPED):
                 continue
@@ -329,8 +342,11 @@ def prepare_queue(
 
     queue["prepared_at"] = datetime.now().isoformat(timespec="seconds")
     save_queue(queue)
-    print(f"预生成完成，本次处理 {prepared} 篇")
-    return queue
+    if prepared:
+        print(f"预生成完成，本次处理 {prepared} 篇")
+    else:
+        print("预生成完成，本次无需处理（推送位已就绪或清单为空）")
+    return queue, prepared
 
 
 def push_from_queue(
@@ -352,12 +368,13 @@ def push_from_queue(
         return 1
 
     if force_prepare:
+        push_window = _entries_in_push_window(queue["items"], settings["push_count"])
         ready_count = sum(
             1
-            for e in queue["items"][: settings["push_count"]]
+            for e in push_window
             if e.get("status") == STATUS_READY and _hub_file_exists(e)
         )
-        if ready_count < settings["push_count"]:
+        if ready_count < len(push_window):
             prepare_queue()
 
     queue = load_queue()
@@ -450,10 +467,10 @@ def queue_summary_for_ui() -> dict[str, Any]:
 
     items = queue.get("items") or []
     ready = [e for e in items if e.get("status") == STATUS_READY]
-    push_slice = items[: settings["push_count"]]
+    push_window = _entries_in_push_window(items, settings["push_count"])
     push_ready = [
         e
-        for e in push_slice
+        for e in push_window
         if e.get("status") == STATUS_READY and _hub_file_exists(e)
     ]
 

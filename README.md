@@ -14,7 +14,7 @@
 - **摘要翻译**：将英文摘要翻译为中文（可选）
 - **关键术语对照**：总结中列出核心专有名词的中英文对照（如 `流形[manifold]`）
 - **控制台界面**：配置推送参数、手动触发、查看日志、管理历史笔记
-- **原生窗口**：双击 `Zotero 简报.app` 打开 pywebview 窗口；支持 `zotero-digest://` 深链接
+- **原生窗口**：双击 `Zotero 简报.app` 打开 pywebview 窗口；hub 冷启动由同目录 `Zotero Digest Link.app` 处理 `zotero-digest://` 深链接
 
 ### 弹窗
 <img width="727" height="489" alt="弹窗" src="https://github.com/user-attachments/assets/1d87d011-8d66-4674-b3fd-53b023e442c4" />
@@ -110,7 +110,7 @@ DEEPSEEK_API_KEY=sk-your-key-here
 | 重建中转页  | `.venv/bin/python rebuild_hubs.py`             |
 
 
-点击 macOS 通知后会打开 HTML 中转页，可查看完整简报、跳转 Zotero 条目或 PDF。
+点击 macOS 通知后会打开 HTML 中转页，可查看完整简报、跳转 Zotero 条目或 PDF。中转页点「简报 App」冷启动时，需项目目录同时存在 `Zotero 简报.app` 与 `Zotero Digest Link.app`（`./build_app.sh` 会构建并注册深链接）；hub 静态资源在 `hubs/_assets/`。
 
 ## 项目结构
 

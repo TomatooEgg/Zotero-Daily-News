@@ -509,6 +509,37 @@
     }
   }
 
+  function bindDigestAppLink(root) {
+    if ((root.dataset.viewer || '') !== 'hub') return;
+    const el = root.querySelector('[data-role="digest-app"]');
+    if (!el || el.dataset.digestBound === '1') return;
+    el.dataset.digestBound = '1';
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      const url = el.getAttribute('href');
+      if (!url) return;
+      const note = getNoteData(root);
+      const apiBase = root.dataset.apiBase || '';
+      // file:// hub 冷启动：直接走深链接，不等待会失败的 API
+      if (location.protocol === 'file:' || !apiBase) {
+        window.location.href = url;
+        return;
+      }
+      fetch(apiUrl(root, '/api/open-digest-app'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: note.id }),
+      })
+        .then(function (res) {
+          if (res.ok) return;
+          window.location.href = url;
+        })
+        .catch(function () {
+          window.location.href = url;
+        });
+    });
+  }
+
   function bindExternalLinks(root) {
     if (!shouldUseApiForExternalLinks(root)) return;
     root.querySelectorAll('[data-external-link]').forEach(function (el) {
@@ -576,6 +607,7 @@
     bindRevealButton(root);
     bindPushZoteroButton(root);
     bindExternalLinks(root);
+    bindDigestAppLink(root);
     refreshExternalLinks(root);
   }
 

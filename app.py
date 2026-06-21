@@ -19,7 +19,8 @@ from notes_index import delete_note, delete_notes, delete_notes_by_date, get_not
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
 from push_finalize import apply_push_results
-from app_bridge import yield_focus_to_external_app
+from app_bridge import navigate_to_note, yield_focus_to_external_app
+from url_handler import open_digest_app_for_note
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
 from zotero_open import open_zotero_deeplink
 from zotero_push import push_digest_note, push_status
@@ -126,6 +127,7 @@ def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str, 
                 message=spec.get("message", ""),
                 subtitle=spec.get("subtitle", ""),
                 hub_path=hub_path,
+                note_id=spec.get("note_id") or (hub_path.stem if hub_path else None),
                 verbose=True,
             )
         log = stderr_buf.getvalue().strip()
@@ -230,6 +232,33 @@ def reveal_in_finder(path: Path) -> tuple[bool, str]:
 
 
 ALLOWED_OPEN_SCHEMES = ("zotero://", "zotero-digest://")
+
+
+@app.post("/api/navigate")
+def api_navigate():
+    data = request.get_json(silent=True) or {}
+    note_id = str(data.get("note_id") or "").strip()
+    if not note_id:
+        return jsonify({"error": "缺少 note_id"}), 400
+    if not get_note(note_id):
+        return jsonify({"error": "笔记不存在"}), 404
+    activate = bool(data.get("activate", True))
+    navigated = navigate_to_note(note_id, activate=activate)
+    return jsonify({"ok": True, "navigated": navigated, "note_id": note_id})
+
+
+@app.post("/api/open-digest-app")
+def api_open_digest_app():
+    data = request.get_json(silent=True) or {}
+    note_id = str(data.get("note_id") or "").strip()
+    if not note_id:
+        return jsonify({"error": "缺少 note_id"}), 400
+    if not get_note(note_id):
+        return jsonify({"error": "笔记不存在"}), 404
+    if navigate_to_note(note_id, activate=False):
+        return jsonify({"ok": True, "mode": "navigate", "note_id": note_id})
+    open_digest_app_for_note(note_id)
+    return jsonify({"ok": True, "mode": "launch", "note_id": note_id})
 
 
 @app.post("/api/open-url")
@@ -486,10 +515,10 @@ def api_prepare_queue():
 
     skip_llm = bool(request.json and request.json.get("metadata_only"))
     try:
-        prepare_queue(skip_llm=skip_llm)
+        _, prepared = prepare_queue(skip_llm=skip_llm)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "prepared": prepared})
 
 
 @app.post("/api/reload-schedule")
@@ -502,7 +531,7 @@ def api_reload_schedule():
 @app.post("/api/run")
 def api_run():
     force = bool(request.json and request.json.get("force"))
-    script_args = [str(SCRIPT_DIR / "digest.py"), "--no-notify"]
+    script_args = [str(SCRIPT_DIR / "digest.py"), "--no-notify", "--push-queue"]
     if force:
         script_args.append("--force")
     cmd = python_cmd(*script_args)

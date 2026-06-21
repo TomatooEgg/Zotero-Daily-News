@@ -7,10 +7,12 @@ from pathlib import Path
 
 from config_manager import load_config, resolve_output_dirs
 from notes_index import list_notes
-from summary_io import build_hub_html
+from summary_io import build_hub_html, ensure_hub_assets
 
 
 def main() -> None:
+    _, hubs_dir = resolve_output_dirs(load_config())
+    ensure_hub_assets(hubs_dir)
     count = 0
     for entry in list_notes():
         hub_path = entry.hub_path

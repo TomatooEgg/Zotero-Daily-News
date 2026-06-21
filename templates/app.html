@@ -580,6 +580,30 @@
       if (root && window.initNoteView) initNoteView(root);
     }
 
+    async function navigateToNote(id) {
+      if (!id) return false;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      const notesTab = document.querySelector('.tab[data-panel="notes"]');
+      if (notesTab) notesTab.classList.add('active');
+      document.getElementById('panel-notes').classList.add('active');
+      if (!allGroups.length) await loadNotes();
+      let foundDate = null;
+      for (const g of allGroups) {
+        if (g.notes.some(n => n.id === id)) {
+          foundDate = g.date;
+          break;
+        }
+      }
+      if (foundDate) selectedDate = foundDate;
+      else selectedDate = null;
+      renderDateSidebar();
+      await openNote(id);
+      if (location.search) history.replaceState({}, '', '/');
+      return true;
+    }
+    window.navigateToNote = navigateToNote;
+
     async function deleteCurrentNote() {
       if (!currentNote) return;
       await deleteNote(currentNote.id);
@@ -770,6 +794,10 @@
       if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
       if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
       let msg = data.ok ? '推送完成' : '推送失败';
+      if (!data.ok && data.stderr) {
+        const hint = data.stderr.split('\n').find((l) => l.includes('就绪') || l.includes('预生成') || l.includes('清单'));
+        if (hint) msg = hint;
+      }
       if (data.ok && data.notifications_failed > 0) {
         msg = '推送完成，但部分通知未弹出，请查看日志';
       }
@@ -815,13 +843,22 @@
         const created = data.created_at ? `创建于 ${data.created_at}` : '';
         const prepared = data.prepared_at ? ` · 最近预生成 ${data.prepared_at}` : '';
         meta.textContent = `${created}${prepared} · 就绪 ${data.push_ready_count}/${pushCount}（推送位）`;
+        const pushWindowKeys = new Set();
+        let nonPushed = 0;
+        for (const item of data.items) {
+          if (item.status === 'pushed') continue;
+          if (nonPushed >= pushCount) break;
+          pushWindowKeys.add(item.item_key);
+          nonPushed++;
+        }
         list.innerHTML = `<table class="queue-table"><thead><tr>
           <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th>
         </tr></thead><tbody>` + data.items.map((item, i) => {
-          const slot = i < pushCount ? ' push-slot' : '';
+          const inPushSlot = pushWindowKeys.has(item.item_key);
+          const slot = inPushSlot ? ' push-slot' : '';
           const pdf = item.has_pdf ? '有' : '无';
           return `<tr class="${slot.trim()}">
-            <td>${i + 1}${i < pushCount ? ' <span class="hint">推送</span>' : ''}</td>
+            <td>${i + 1}${inPushSlot ? ' <span class="hint">推送</span>' : ''}</td>
             <td>${esc(item.title || item.item_key)}</td>
             <td>${queueStatusLabel(item.status)}</td>
             <td>${deepReadLabel(item.deep_read)}</td>
@@ -851,7 +888,8 @@
       const res = await fetch('/api/queue/prepare', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
       const data = await res.json();
       if (!res.ok) { toast(data.error || '预生成失败'); return; }
-      toast('预生成完成');
+      const n = data.prepared ?? 0;
+      toast(n > 0 ? `预生成完成（${n} 篇）` : '预生成完成，推送位已就绪，无需处理');
       loadQueue();
       loadNotes();
     }
@@ -965,7 +1003,11 @@
     loadStarred();
     loadSidebarState();
     initColumnResizers();
-    loadNotes();
+    loadNotes().then(function () {
+      const params = new URLSearchParams(location.search);
+      const noteId = params.get('note');
+      if (noteId) navigateToNote(noteId);
+    });
     loadZoteroConfig();
   </script>
 </body>

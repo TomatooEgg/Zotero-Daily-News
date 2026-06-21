@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -129,6 +130,44 @@ def parse_notify_stdout(stdout: str) -> list[dict[str, str]]:
     return specs
 
 
+def _resolve_note_id(note_id: str | None, hub_path: Path | None) -> str | None:
+    if note_id:
+        return note_id
+    if hub_path:
+        return hub_path.stem
+    return None
+
+
+def _terminal_notifier_execute_cmd(note_id: str) -> str:
+    venv_py = SCRIPT_DIR / ".venv" / "bin" / "python"
+    py = str(venv_py if venv_py.exists() else (shutil.which("python3") or "python3"))
+    inner = (
+        f"cd {shlex.quote(str(SCRIPT_DIR))} && "
+        f"NO_PROXY=127.0.0.1,localhost,::1 "
+        f"{shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} "
+        f"--open-target {shlex.quote(note_id)}"
+    )
+    try:
+        import subprocess as sp
+
+        if sp.run(["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True).stdout.strip() == "1":
+            return f"cd {shlex.quote(str(SCRIPT_DIR))} && NO_PROXY=127.0.0.1,localhost,::1 arch -arm64 {shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} --open-target {shlex.quote(note_id)}"
+    except OSError:
+        pass
+    return inner
+
+
+def _open_notify_target(note_id: str | None, hub_path: Path | None) -> None:
+    from url_handler import open_notify_target
+
+    resolved = _resolve_note_id(note_id, hub_path)
+    if not resolved:
+        if hub_path and hub_path.exists():
+            subprocess.run(["open", str(hub_path.resolve())], check=False)
+        return
+    open_notify_target(resolved, hub_path)
+
+
 def _notify_alerter(
     binary: Path,
     title: str,
@@ -136,6 +175,8 @@ def _notify_alerter(
     subtitle: str,
     hub_path: Path,
     verbose: bool,
+    *,
+    note_id: str | None = None,
 ) -> str | None:
     group = f"zotero-digest-{hub_path.stem}"
     cmd = [
@@ -167,7 +208,7 @@ def _notify_alerter(
             print("[alerter] 失败，尝试降级到 terminal-notifier", file=sys.stderr)
         return None
     if hub_path.exists() and is_publish_action(action):
-        subprocess.run(["open", str(hub_path.resolve())], check=False)
+        _open_notify_target(note_id, hub_path)
     return action
 
 
@@ -183,6 +224,8 @@ def _notify_terminal_notifier(
     open_url: str | None,
     sender: str,
     verbose: bool,
+    *,
+    execute: str | None = None,
 ) -> bool:
     cmd = [
         str(binary),
@@ -197,7 +240,9 @@ def _notify_terminal_notifier(
     ]
     if subtitle:
         cmd.extend(["-subtitle", subtitle])
-    if open_url:
+    if execute:
+        cmd.extend(["-execute", execute])
+    elif open_url:
         cmd.extend(["-open", open_url])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -233,10 +278,9 @@ def _notify_osascript(title: str, message: str, subtitle: str, verbose: bool) ->
     return result.returncode == 0 and not broken
 
 
-def _fallback_alert(hub_path: Path | None, verbose: bool) -> None:
+def _fallback_alert(hub_path: Path | None, verbose: bool, *, note_id: str | None = None) -> None:
     subprocess.run(["afplay", "/System/Library/Sounds/Glass.aiff"], check=False)
-    if hub_path and hub_path.exists():
-        subprocess.run(["open", str(hub_path.resolve())], check=False)
+    _open_notify_target(note_id, hub_path)
     if verbose:
         print("[fallback] 已播放提示音并打开中转页", file=sys.stderr)
 
@@ -263,14 +307,17 @@ def notify_macos(
     hub_path: Path | None = None,
     dry_run: bool = False,
     verbose: bool = False,
+    *,
+    note_id: str | None = None,
 ) -> tuple[bool, str | None]:
+    resolved_note_id = _resolve_note_id(note_id, hub_path)
     if dry_run:
         print(f"\n[通知] {title}")
         if subtitle:
             print(f"  副标题: {subtitle}")
         print(f"  {message}")
         if hub_path:
-            print(f"  按钮「{SUMMARY_ACTION}」→ {hub_path.resolve().as_uri()}")
+            print(f"  按钮「{SUMMARY_ACTION}」→ App 已开则跳转条目，否则 {hub_path.resolve().as_uri()}")
             print(f"  按钮「{DEFER_ACTION}」→ 保留缓存，暂不写入 App 当日内容")
         return True, SUMMARY_ACTION
 
@@ -284,27 +331,34 @@ def notify_macos(
 
     # 1) alerter（带「查看总结」「下次再推」操作按钮）
     if alerter and hub_path and hub_path.exists():
-        action = _notify_alerter(alerter, title, message, subtitle, hub_path, verbose)
+        action = _notify_alerter(
+            alerter, title, message, subtitle, hub_path, verbose, note_id=resolved_note_id
+        )
         if action is not None:
             return True, action
 
     # 2) terminal-notifier（点击通知正文跳转；无推迟按钮，视为立即发布）
     if binary:
+        execute_cmd = _terminal_notifier_execute_cmd(resolved_note_id) if resolved_note_id else None
+        if execute_cmd and _notify_terminal_notifier(
+            binary, title, message, subtitle, None, sender, verbose, execute=execute_cmd
+        ):
+            return True, IMMEDIATE_PUBLISH_ACTION
         if _notify_terminal_notifier(binary, title, message, subtitle, hub_uri, sender, verbose):
             return True, IMMEDIATE_PUBLISH_ACTION
         if _notify_terminal_notifier(binary, title, message, subtitle, None, sender, verbose):
             if hub_path and hub_path.exists():
-                subprocess.run(["open", str(hub_path.resolve())], check=False)
+                _open_notify_target(resolved_note_id, hub_path)
             return True, IMMEDIATE_PUBLISH_ACTION
 
     # 3) osascript（需在 系统设置→通知→脚本编辑器 或 终端 中允许）
     if _notify_osascript(title, message, subtitle, verbose):
         if hub_path and hub_path.exists():
-            subprocess.run(["open", str(hub_path.resolve())], check=False)
+            _open_notify_target(resolved_note_id, hub_path)
         return True, IMMEDIATE_PUBLISH_ACTION
 
     # 4) 兜底：声音 + 打开页面
-    _fallback_alert(hub_path, verbose)
+    _fallback_alert(hub_path, verbose, note_id=resolved_note_id)
     print(
         "\n未能弹出系统通知。请在「系统设置 → 通知」中开启以下任一应用的通知：\n"
         "  • 终端 (Terminal)\n"
@@ -331,3 +385,32 @@ def diagnose() -> None:
         message="如果你看到这条通知，说明通道正常。",
         verbose=True,
     )
+
+
+def _cli_open_target() -> int:
+    note_id = ""
+    hub_path: Path | None = None
+    args = sys.argv[2:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--hub" and i + 1 < len(args):
+            hub_path = Path(args[i + 1])
+            i += 2
+            continue
+        if not note_id and not args[i].startswith("-"):
+            note_id = args[i]
+        i += 1
+    if not note_id:
+        print("用法: notifier.py --open-target <note_id> [--hub path]", file=sys.stderr)
+        return 1
+    _open_notify_target(note_id, hub_path)
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--open-target":
+        raise SystemExit(_cli_open_target())
+    if len(sys.argv) >= 2 and sys.argv[1] == "--diagnose":
+        diagnose()
+        raise SystemExit(0)
+    diagnose()

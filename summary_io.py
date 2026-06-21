@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from config_manager import SCRIPT_DIR
 from md_render import normalize_plaintext
 from zotero_links import zotero_item_url, zotero_pdf_url
 
@@ -108,10 +110,24 @@ def build_markdown(
     return "\n".join(lines)
 
 
+def ensure_hub_assets(hubs_dir: Path) -> None:
+    """同步 static 资源到 hubs/_assets，供 file:// 中转页离线加载。"""
+    assets = hubs_dir / "_assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    static = SCRIPT_DIR / "static"
+    for name in ("note-view.css", "note-view.js"):
+        src = static / name
+        if src.is_file():
+            shutil.copy2(src, assets / name)
+
+
 def build_hub_html(note_id: str) -> str:
     from app import app
+    from config_manager import load_config, resolve_output_dirs
     from note_view import render_hub_static_html
 
+    _, hubs_dir = resolve_output_dirs(load_config())
+    ensure_hub_assets(hubs_dir)
     html = render_hub_static_html(app, note_id)
     if not html:
         raise ValueError(f"无法渲染中转页: {note_id}")

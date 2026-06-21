@@ -15,6 +15,7 @@ logs/
 # launchd / 构建产物（本地生成，含个人路径，勿提交）
 com.*.zotero-digest*.plist
 Zotero 简报.app/
+Zotero Digest Link.app/
 bin/
 
 # Python
