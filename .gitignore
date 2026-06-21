@@ -35,5 +35,6 @@ build/
 .idea/
 .vscode/
 .cursor/
+代码优化.md
 *.swp
 *~

@@ -255,7 +255,7 @@ def api_open_digest_app():
         return jsonify({"error": "缺少 note_id"}), 400
     if not get_note(note_id):
         return jsonify({"error": "笔记不存在"}), 404
-    if navigate_to_note(note_id, activate=False):
+    if navigate_to_note(note_id, activate=True):
         return jsonify({"ok": True, "mode": "navigate", "note_id": note_id})
     open_digest_app_for_note(note_id)
     return jsonify({"ok": True, "mode": "launch", "note_id": note_id})

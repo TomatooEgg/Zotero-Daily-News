@@ -509,14 +509,22 @@
     }
   }
 
+  function digestAppActivateUrl(url) {
+    if (!url) return url;
+    if (/[?&]activate=(?:1|true|yes)/i.test(url)) return url;
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'activate=1';
+  }
+
   function bindDigestAppLink(root) {
     if ((root.dataset.viewer || '') !== 'hub') return;
     const el = root.querySelector('[data-role="digest-app"]');
     if (!el || el.dataset.digestBound === '1') return;
     el.dataset.digestBound = '1';
+    const href = el.getAttribute('href');
+    if (href) el.setAttribute('href', digestAppActivateUrl(href));
     el.addEventListener('click', function (e) {
       e.preventDefault();
-      const url = el.getAttribute('href');
+      const url = digestAppActivateUrl(el.getAttribute('href'));
       if (!url) return;
       const note = getNoteData(root);
       const apiBase = root.dataset.apiBase || '';
@@ -601,6 +609,13 @@
   function initNoteView(root) {
     if (!root || root.dataset.initialized === '1') return;
     root.dataset.initialized = '1';
+    if ((root.dataset.viewer || '') === 'hub') {
+      const digestEl = root.querySelector('[data-role="digest-app"]');
+      if (digestEl) {
+        const href = digestEl.getAttribute('href');
+        if (href) digestEl.setAttribute('href', digestAppActivateUrl(href));
+      }
+    }
     const note = getNoteData(root);
     mountAbstractZhControls(root, note);
     mountDeepReadControls(root, note);

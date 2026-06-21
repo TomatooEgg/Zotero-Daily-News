@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""zotero-digest:// 中转：记录前台 App 后用 open -g 后台唤起主程序。"""
+"""zotero-digest:// 中转：hub 前台唤起主程序，其它深链接后台唤起。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from macos_window import digest_app_bundle_path, remember_frontmost_app_to_file
-from url_handler import deeplink_from_argv, parse_deeplink
+from url_handler import deeplink_from_argv, deeplink_wants_activate, parse_deeplink
 
 LINK_LOG = Path.home() / "Library/Application Support/Zotero Digest/link.log"
 
@@ -40,25 +40,35 @@ def _notify(title: str, message: str) -> None:
     )
 
 
-def launch_main_app_background(url: str) -> None:
+def launch_main_app(url: str, *, background: bool = True) -> None:
     bundle = digest_app_bundle_path()
     if bundle.exists():
-        cmd = ["open", "-g", "-a", str(bundle.resolve()), url]
+        cmd = ["open", "-a", str(bundle.resolve()), url]
+        if background:
+            cmd.insert(1, "-g")
     else:
-        cmd = ["open", "-g", url]
+        cmd = ["open", url]
+        if background:
+            cmd.insert(1, "-g")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         err = (result.stderr or result.stdout or "open failed").strip()
         _log(f"launch failed: {err} url={url}")
         _notify("Zotero Digest Link", f"无法唤起简报: {err[:80]}")
     else:
-        _log(f"launch ok url={url}")
+        _log(f"launch ok background={background} url={url}")
+
+
+def launch_main_app_background(url: str) -> None:
+    launch_main_app(url, background=True)
 
 
 def handle_deeplink(url: str) -> None:
     _log(f"handle url={url}")
-    remember_frontmost_app_to_file()
-    launch_main_app_background(url)
+    activate = deeplink_wants_activate(url)
+    if not activate:
+        remember_frontmost_app_to_file()
+    launch_main_app(url, background=not activate)
 
 
 def _terminate_app() -> None:

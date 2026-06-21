@@ -27,9 +27,17 @@ cd "$PROJECT" || exit 1
 PYTHON="$PROJECT/.venv/bin/python"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
 if [ "$#" -gt 0 ]; then
-  mkdir -p "$SUPPORT_DIR"
-  osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
-    > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
+  remember_front=1
+  for arg in "$@"; do
+    case "$arg" in
+      *activate=1*|*activate=true*|*activate=yes*) remember_front=0 ;;
+    esac
+  done
+  if [ "$remember_front" -eq 1 ]; then
+    mkdir -p "$SUPPORT_DIR"
+    osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
+      > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
+  fi
 fi
 if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
   exec arch -arm64 "$PYTHON" "$PROJECT/launcher.py" "$@"
@@ -75,16 +83,28 @@ PYTHON="$PROJECT/.venv/bin/python"
 MAIN_APP="$PROJECT/Zotero 简报.app"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
 mkdir -p "$SUPPORT_DIR"
-osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
-  > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
 for arg in "$@"; do
   case "$arg" in
     zotero-digest:*)
-      echo "$(date '+%Y-%m-%d %H:%M:%S') shell handle $arg" >> "$SUPPORT_DIR/link.log" 2>/dev/null || true
+      background=1
+      case "$arg" in
+        *activate=1*|*activate=true*|*activate=yes*) background=0 ;;
+      esac
+      echo "$(date '+%Y-%m-%d %H:%M:%S') shell handle background=$background $arg" >> "$SUPPORT_DIR/link.log" 2>/dev/null || true
+      if [ "$background" -eq 1 ]; then
+        osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
+          > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
+      fi
       if [[ -d "$MAIN_APP" ]]; then
-        open -g -a "$MAIN_APP" "$arg"
-      else
+        if [ "$background" -eq 1 ]; then
+          open -g -a "$MAIN_APP" "$arg"
+        else
+          open -a "$MAIN_APP" "$arg"
+        fi
+      elif [ "$background" -eq 1 ]; then
         open -g "$arg"
+      else
+        open "$arg"
       fi
       exit 0
       ;;

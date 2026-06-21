@@ -189,6 +189,32 @@ def activate_window(pywebview_window: Any) -> None:
             pass
 
 
+def activate_digest_app() -> None:
+    """通过 AppleScript 激活简报 App（浏览器唤起时的兜底）。"""
+    if sys.platform != "darwin":
+        return
+    subprocess.run(
+        ["osascript", "-e", 'tell application "Zotero 简报" to activate'],
+        check=False,
+        timeout=5,
+    )
+
+
+def schedule_window_activate(pywebview_window: Any) -> None:
+    """多次尝试激活窗口；从 hub/浏览器唤起时 macOS 常需延迟。"""
+    activate_window(pywebview_window)
+    if sys.platform != "darwin":
+        return
+
+    def _retry(delay: float) -> None:
+        time.sleep(delay)
+        activate_window(pywebview_window)
+        activate_digest_app()
+
+    for delay in (0.12, 0.35, 0.75, 1.2):
+        threading.Thread(target=_retry, args=(delay,), daemon=True).start()
+
+
 def patch_pywebview_deeplink_cold_start() -> None:
     """深链接冷启动：first_show 仅 orderFront，不 activateIgnoringOtherApps。"""
     if sys.platform != "darwin":
@@ -263,12 +289,13 @@ def chain_macos_app_handlers(
 
         def application_openURLs_(self, application, urls):
             if self._on_note:
-                from url_handler import parse_deeplink
+                from url_handler import deeplink_wants_activate, parse_deeplink
 
                 for url in urls:
-                    note_id = parse_deeplink(str(url.absoluteString()))
+                    raw = str(url.absoluteString())
+                    note_id = parse_deeplink(raw)
                     if note_id:
-                        self._on_note(note_id)
+                        self._on_note(note_id, activate=deeplink_wants_activate(raw))
             if self._parent.respondsToSelector_("application:openURLs:"):
                 self._parent.application_openURLs_(application, urls)
 

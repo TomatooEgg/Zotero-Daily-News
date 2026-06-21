@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from config_manager import load_config
 from net_env import ensure_local_no_proxy
@@ -76,8 +76,19 @@ def parse_deeplink(url: str) -> str | None:
     return None
 
 
-def deeplink_for_note(note_id: str) -> str:
-    return f"{DEEPLINK_SCHEME}://note/{note_id}"
+def deeplink_wants_activate(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    if parsed.scheme != DEEPLINK_SCHEME:
+        return False
+    val = (parse_qs(parsed.query).get("activate") or [""])[0].strip().lower()
+    return val in ("1", "true", "yes")
+
+
+def deeplink_for_note(note_id: str, *, activate: bool = False) -> str:
+    base = f"{DEEPLINK_SCHEME}://note/{note_id}"
+    if activate:
+        return f"{base}?activate=1"
+    return base
 
 
 def note_path(note_id: str) -> str:
@@ -85,24 +96,26 @@ def note_path(note_id: str) -> str:
 
 
 def open_digest_app_for_note(note_id: str) -> bool:
-    """Hub 打开简报：已运行则后台导航，否则 -g 冷启动且不抢焦点。"""
+    """Hub 打开简报：已运行则前台导航，否则前台冷启动。"""
     if not note_id:
         return False
-    if navigate_to_note_in_app(note_id, activate=False):
+    if navigate_to_note_in_app(note_id, activate=True):
         return True
-    from macos_window import remember_frontmost_app_to_file
-
-    remember_frontmost_app_to_file()
-    subprocess.run(["open", deeplink_for_note(note_id)], check=False)
+    subprocess.run(["open", deeplink_for_note(note_id, activate=True)], check=False)
     return True
 
 
 def deeplink_from_argv(argv: list[str] | None = None) -> str | None:
+    note_id, _ = deeplink_launch_from_argv(argv)
+    return note_id
+
+
+def deeplink_launch_from_argv(argv: list[str] | None = None) -> tuple[str | None, bool]:
     for arg in argv or sys.argv[1:]:
         note_id = parse_deeplink(arg)
         if note_id:
-            return note_id
-    return None
+            return note_id, deeplink_wants_activate(arg)
+    return None, False
 
 
 def install_macos_url_handler(on_note: Callable[[str], None]) -> None:

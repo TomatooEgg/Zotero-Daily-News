@@ -19,10 +19,11 @@ from macos_window import (
     patch_pywebview_deeplink_cold_start,
     remember_frontmost_app_for_cold_start,
     schedule_deeplink_focus_release,
+    schedule_window_activate,
 )
 from net_env import ensure_local_no_proxy
 from url_handler import (
-    deeplink_from_argv,
+    deeplink_launch_from_argv,
     digest_app_base_url,
     navigate_to_note_in_app,
     note_path,
@@ -60,7 +61,7 @@ def _show_window(window: Any, *, activate: bool) -> None:
             window.show()
         except Exception:
             pass
-        activate_window(window)
+        schedule_window_activate(window)
         return
     order_front_without_activate(window)
 
@@ -70,9 +71,10 @@ def main() -> None:
     from app import app
 
     base_url = digest_app_base_url()
-    pending_note_id = deeplink_from_argv()
+    pending_note_id, deeplink_activate = deeplink_launch_from_argv()
     deeplink_launch = bool(pending_note_id)
-    if deeplink_launch:
+    deeplink_background = deeplink_launch and not deeplink_activate
+    if deeplink_background:
         remember_frontmost_app_for_cold_start()
 
     state: dict[str, Any] = {
@@ -101,9 +103,9 @@ def main() -> None:
         _show_window(window, activate=activate)
         return True
 
-    def open_note(note_id: str) -> None:
+    def open_note(note_id: str, *, activate: bool = False) -> None:
         state["pending_note_id"] = note_id
-        if not navigate_in_window(note_id, activate=False):
+        if not navigate_in_window(note_id, activate=activate):
             return
 
     def show_from_user() -> None:
@@ -129,7 +131,9 @@ def main() -> None:
 
     if not _port_free(PORT):
         print(f"复用已在运行的服务: {base_url}", file=sys.stderr)
-        if pending_note_id and navigate_to_note_in_app(pending_note_id, activate=False):
+        if pending_note_id and navigate_to_note_in_app(
+            pending_note_id, activate=deeplink_activate
+        ):
             print(f"已转发导航至笔记: {pending_note_id}", file=sys.stderr)
         return
 
@@ -143,13 +147,17 @@ def main() -> None:
     def on_gui_ready() -> None:
         state["warm"] = True
         chain_macos_app_handlers(on_note=open_note, on_reopen=show_from_user)
-        if deeplink_launch:
+        if deeplink_background:
             schedule_deeplink_focus_release()
+        elif deeplink_activate:
+            window = state.get("window")
+            if window is not None:
+                _show_window(window, activate=True)
 
     try:
         import webview
 
-        if deeplink_launch:
+        if deeplink_background:
             patch_pywebview_deeplink_cold_start()
 
         window = webview.create_window(
@@ -159,7 +167,7 @@ def main() -> None:
             height=820,
             min_size=(900, 600),
             text_select=True,
-            hidden=deeplink_launch,
+            hidden=deeplink_background,
         )
         state["window"] = window
         webview.start(on_gui_ready)

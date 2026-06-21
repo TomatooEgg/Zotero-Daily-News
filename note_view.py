@@ -82,7 +82,7 @@ def prepare_note_view_context(
 
     pdf_url = resolve_pdf_url(md_text, entry.item_key)
     zotero_url = zotero_item_url(entry.item_key)
-    digest_app_url = deeplink_for_note(note_id)
+    digest_app_url = deeplink_for_note(note_id, activate=viewer == "hub")
 
     note_data = {
         "id": note_id,

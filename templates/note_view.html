@@ -28,6 +28,11 @@
   {% if viewer == 'hub' %}
   <script>
   (function () {
+    function digestAppActivateUrl(url) {
+      if (!url) return url;
+      if (/[?&]activate=(?:1|true|yes)/i.test(url)) return url;
+      return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'activate=1';
+    }
     function bindDigestAppInline() {
       var el = document.querySelector('[data-role="digest-app"]');
       if (!el || el.dataset.hubInlineBound === '1') return;
@@ -53,7 +58,7 @@
         function goDeeplink() {
           opened = true;
           clearTimeout(hintTimer);
-          window.location.href = url;
+          window.location.href = digestAppActivateUrl(url);
         }
         if (apiBase && noteId && typeof fetch === 'function') {
           fetch(apiBase + '/api/open-digest-app', {
