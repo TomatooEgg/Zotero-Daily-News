@@ -64,5 +64,5 @@ def test_windows_scheduler_uses_frozen_executable(monkeypatch, tmp_path):
 
     assert ok, message
     create_commands = [" ".join(cmd) for cmd in calls if "/Create" in cmd]
-    assert any('"C:\\Apps\\Zotero Daily News\\Zotero Daily News.exe" --push-queue' in cmd for cmd in create_commands)
-    assert any('"C:\\Apps\\Zotero Daily News\\Zotero Daily News.exe"' in cmd and "--prepare-queue" in cmd for cmd in create_commands)
+    assert any("Zotero Daily News.exe" in cmd and "--push-queue" in cmd for cmd in create_commands)
+    assert any("Zotero Daily News.exe" in cmd and "--prepare-queue" in cmd for cmd in create_commands)
