@@ -119,6 +119,9 @@ def ensure_hub_assets(hubs_dir: Path) -> None:
         src = static / name
         if src.is_file():
             shutil.copy2(src, assets / name)
+    katex_src = static / "katex"
+    if katex_src.is_dir():
+        shutil.copytree(katex_src, assets / "katex", dirs_exist_ok=True)
 
 
 def build_hub_html(note_id: str) -> str:

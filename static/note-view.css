@@ -182,6 +182,18 @@
   height: auto;
 }
 
+.note-view-root .content .katex,
+.note-view-root .deep-read-panel .content .katex {
+  font-size: 1em;
+}
+
+.note-view-root .content td .katex,
+.note-view-root .deep-read-panel .content td .katex {
+  white-space: normal;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 .note-view-root .deep-read-loading {
   text-align: center;
   padding: 28px 12px;

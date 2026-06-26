@@ -11,6 +11,19 @@
     return base + path;
   }
 
+  function friendlyApiError(err, root, fallback) {
+    const msg = (err && err.message) || '';
+    const isNetwork =
+      err instanceof TypeError ||
+      /load failed|failed to fetch|networkerror|network error/i.test(msg);
+    if (!isNetwork) return msg || fallback;
+    const viewer = root.dataset.viewer || '';
+    if (viewer === 'hub' && location.protocol === 'file:') {
+      return '无法连接本地简报服务。请先点击「简报 App」打开应用，或在应用内使用摘要翻译。';
+    }
+    return '无法连接本地简报服务，请确认简报 App 已启动。';
+  }
+
   function notifyUser(message) {
     if (typeof window.toast === 'function') window.toast(message);
     else alert(message);
@@ -102,7 +115,8 @@
         abstract_original: data.original || '',
       });
     } catch (err) {
-      panel.innerHTML = '<div class="abstract-zh-loading">' + esc(err.message || '翻译失败') + '</div>';
+      panel.innerHTML =
+        '<div class="abstract-zh-loading">' + esc(friendlyApiError(err, root, '翻译失败')) + '</div>';
       panel.dataset.loaded = '0';
       panel.classList.add('open');
     } finally {
@@ -112,6 +126,68 @@
   }
 
   let mermaidLoadPromise = null;
+  let katexLoadPromise = null;
+
+  function katexBase(root) {
+    const link = document.querySelector('link[href*="katex.min.css"]');
+    if (link) {
+      const href = link.getAttribute('href') || '';
+      return href.replace(/katex\.min\.css(?:\?.*)?$/, '');
+    }
+    if (location.protocol === 'file:') return '_assets/katex/';
+    return '/static/katex/';
+  }
+
+  function loadKatex(root) {
+    if (window.renderMathInElement && window.katex) return Promise.resolve();
+    if (katexLoadPromise) return katexLoadPromise;
+    const base = katexBase(root);
+    katexLoadPromise = new Promise(function (resolve, reject) {
+      if (!document.querySelector('link[href*="katex.min.css"]')) {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = base + 'katex.min.css';
+        document.head.appendChild(css);
+      }
+      const script = document.createElement('script');
+      script.src = base + 'katex.min.js';
+      script.onload = function () {
+        const auto = document.createElement('script');
+        auto.src = base + 'auto-render.min.js';
+        auto.onload = function () {
+          resolve();
+        };
+        auto.onerror = function () {
+          reject(new Error('KaTeX auto-render 加载失败'));
+        };
+        document.head.appendChild(auto);
+      };
+      script.onerror = function () {
+        reject(new Error('KaTeX 加载失败'));
+      };
+      document.head.appendChild(script);
+    });
+    return katexLoadPromise;
+  }
+
+  async function renderMathInContainer(root, container) {
+    if (!container || container.dataset.mathRendered === '1') return;
+    try {
+      await loadKatex(root);
+    } catch (err) {
+      console.error('KaTeX load error:', err);
+      return;
+    }
+    if (!window.renderMathInElement) return;
+    window.renderMathInElement(container, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$', right: '$', display: false },
+      ],
+      throwOnError: false,
+    });
+    container.dataset.mathRendered = '1';
+  }
 
   function loadMermaid() {
     if (window.mermaid) return Promise.resolve(window.mermaid);
@@ -192,12 +268,18 @@
     }
   }
 
-  async function ensureDeepReadMermaid(panel) {
-    if (!panel || panel.dataset.mermaidRendered === '1') return;
+  async function ensureDeepReadEnhancements(root, panel) {
+    if (!panel) return;
     const content = panel.querySelector('.content');
     if (!content) return;
-    await renderMermaidInContainer(content);
-    panel.dataset.mermaidRendered = '1';
+    if (panel.dataset.mermaidRendered !== '1') {
+      await renderMermaidInContainer(content);
+      panel.dataset.mermaidRendered = '1';
+    }
+    if (panel.dataset.mathRendered !== '1') {
+      await renderMathInContainer(root, content);
+      panel.dataset.mathRendered = '1';
+    }
   }
 
   function placeDeepReadAfterWhyRead(contentEl, wrapEl) {
@@ -242,6 +324,7 @@
     panel.classList.remove('open');
     panel.innerHTML = '';
     panel.dataset.mermaidRendered = '0';
+    panel.dataset.mathRendered = '0';
     if (note.has_deep_read && note.deep_read_html) {
       panel.dataset.loaded = '1';
       panel.innerHTML = '<div class="content">' + note.deep_read_html + '</div>';
@@ -283,10 +366,11 @@
         throw new Error('深度解读结果为空，请稍后重试');
       }
       panel.dataset.mermaidRendered = '0';
+      panel.dataset.mathRendered = '0';
       panel.innerHTML = '<div class="content">' + (data.html || '') + '</div>';
       panel.dataset.loaded = '1';
       setNoteData(root, { has_deep_read: true, deep_read_html: data.html || '' });
-      await ensureDeepReadMermaid(panel);
+      await ensureDeepReadEnhancements(root, panel);
     } catch (err) {
       if (!root.isConnected) return;
       const message = err.message || '生成失败';
@@ -317,7 +401,7 @@
     }
     if (panel.dataset.loaded === '1') {
       panel.classList.add('open');
-      await ensureDeepReadMermaid(panel);
+      await ensureDeepReadEnhancements(root, panel);
       return;
     }
     if (root.dataset.deepLoading === '1') return;
@@ -606,7 +690,7 @@
     }
   }
 
-  function initNoteView(root) {
+  async function initNoteView(root) {
     if (!root || root.dataset.initialized === '1') return;
     root.dataset.initialized = '1';
     if ((root.dataset.viewer || '') === 'hub') {
@@ -624,6 +708,8 @@
     bindExternalLinks(root);
     bindDigestAppLink(root);
     refreshExternalLinks(root);
+    const content = root.querySelector('.content');
+    if (content) await renderMathInContainer(root, content);
   }
 
   window.initNoteView = initNoteView;

@@ -396,25 +396,23 @@ def run(
 
 
 def test_notification(verbose: bool = False) -> int:
-    hub = SCRIPT_DIR / "hubs" / "_test.html"
-    hub.parent.mkdir(parents=True, exist_ok=True)
-    hub.write_text(
-        """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-        <title>测试</title></head><body><h1>通知测试成功</h1>
-        <p>点击通知后应看到此页面。</p></body></html>""",
-        encoding="utf-8",
-    )
+    from seed_test_note import ensure_test_note
+
+    sample = ensure_test_note()
     ok, _action = notify_macos(
-        title="Zotero 简报测试",
-        subtitle="通知系统",
-        message="如果你看到这条通知，说明推送正常。",
-        hub_path=hub,
+        title=sample["notify_title"],
+        subtitle=sample["subtitle"],
+        message=sample["briefing"],
+        hub_path=sample["hub_path"],
+        note_id=sample["note_id"],
         verbose=verbose,
     )
     if ok:
-        print("通知已发送（请查看屏幕右上角通知中心）")
+        print("示例推送已发送（请查看屏幕右上角通知中心）")
+        print(f"  笔记: {sample['title']}")
+        print(f"  Hub:  {sample['hub_path']}")
     else:
-        print("通知发送失败 — 已播放提示音并尝试打开测试页，请查看上方说明")
+        print("示例推送失败 — 已播放提示音并尝试打开测试页，请查看上方说明")
     return 0 if ok else 1
 
 

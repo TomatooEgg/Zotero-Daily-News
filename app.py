@@ -23,6 +23,7 @@ from app_bridge import navigate_to_note, yield_focus_to_external_app
 from url_handler import open_digest_app_for_note
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
 from zotero_open import open_zotero_deeplink
+from seed_test_note import ensure_test_note
 from zotero_push import push_digest_note, push_status
 
 app = Flask(__name__)
@@ -148,18 +149,6 @@ def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str, 
         })
 
     return sent, failed, "\n".join(logs), results
-
-
-def create_test_hub() -> Path:
-    hub = SCRIPT_DIR / "hubs" / "_test.html"
-    hub.parent.mkdir(parents=True, exist_ok=True)
-    hub.write_text(
-        """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-        <title>测试</title></head><body><h1>通知测试成功</h1>
-        <p>点击通知后应看到此页面。</p></body></html>""",
-        encoding="utf-8",
-    )
-    return hub
 
 
 @app.get("/")
@@ -560,20 +549,27 @@ def api_run():
 
 @app.post("/api/test-notify")
 def api_test_notify():
-    hub = create_test_hub()
+    try:
+        sample = ensure_test_note(quiet=True)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
     stderr_buf = io.StringIO()
     with contextlib.redirect_stderr(stderr_buf):
         ok, _action = notify_macos(
-            title="Zotero 简报测试",
-            subtitle="通知系统",
-            message="如果你看到这条通知，说明推送正常。",
-            hub_path=hub,
+            title=sample["notify_title"],
+            subtitle=sample["subtitle"],
+            message=sample["briefing"],
+            hub_path=sample["hub_path"],
+            note_id=sample["note_id"],
             verbose=True,
         )
     notify_log = stderr_buf.getvalue().strip()
     return jsonify({
         "ok": ok,
-        "stdout": "通知已发送（请查看屏幕右上角通知中心）" if ok else "通知发送失败",
+        "note_id": sample["note_id"],
+        "title": sample["title"],
+        "stdout": "示例推送已发送（请查看屏幕右上角通知中心）" if ok else "示例推送失败",
         "stderr": notify_log,
         "notifications_sent": 1 if ok else 0,
         "notifications_failed": 0 if ok else 1,

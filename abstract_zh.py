@@ -14,6 +14,7 @@ from digest import load_dotenv
 from net_env import connect_zotero
 from md_render import normalize_plaintext
 from notes_index import get_note
+from summary_io import build_hub_html
 
 ENV_PATH = SCRIPT_DIR / ".env"
 ZH_START = "<!-- zh-abstract -->"
@@ -127,5 +128,7 @@ def generate_abstract_zh(note_id: str) -> dict[str, Any]:
 
     updated_md = insert_abstract_zh(md_text, translation)
     md_path.write_text(updated_md, encoding="utf-8")
+    if entry.hub_path:
+        Path(entry.hub_path).write_text(build_hub_html(note_id), encoding="utf-8")
 
     return {"cached": False, "text": translation, "original": abstract}

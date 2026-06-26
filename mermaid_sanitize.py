@@ -10,6 +10,8 @@ _BARE_UNDERSCORE_RE = re.compile(
     r"(?<![\\$`])([\u0370-\u03FF\u1D00-\u1DBF\w\u0300-\u036F])_(\{|[A-Za-z0-9])"
 )
 _MERMAID_FENCE_RE = re.compile(r"```mermaid[\s\S]*?```", re.I)
+_TABLE_ROW_RE = re.compile(r"^\s*\|")
+_UNESCAPED_PIPE_RE = re.compile(r"(?<!\\)\|")
 
 
 def _sanitize_mermaid_line(line: str) -> str:
@@ -32,6 +34,31 @@ def _sanitize_mermaid_fences(text: str) -> str:
         return f"```mermaid{sanitized}\n```"
 
     return _MERMAID_FENCE_RE.sub(repl, text)
+
+
+def _escape_pipes_in_math_segment(math: str) -> str:
+    body = math[1:-1]
+    return "$" + _UNESCAPED_PIPE_RE.sub(r"\\|", body) + "$"
+
+
+def _escape_pipes_in_table_line(line: str) -> str:
+    segments: list[str] = []
+    cursor = 0
+    for match in _INLINE_MATH_RE.finditer(line):
+        segments.append(line[cursor : match.start()])
+        segments.append(_escape_pipes_in_math_segment(match.group(0)))
+        cursor = match.end()
+    segments.append(line[cursor:])
+    return "".join(segments)
+
+
+def escape_pipes_in_table_math(text: str) -> str:
+    """GFM 表格以 | 分列；$...$ 内的裸 | 会破坏列结构，需转义为 \\|。"""
+    lines = text.split("\n")
+    return "\n".join(
+        _escape_pipes_in_table_line(line) if _TABLE_ROW_RE.match(line) else line
+        for line in lines
+    )
 
 
 def escape_bare_underscores(text: str) -> str:

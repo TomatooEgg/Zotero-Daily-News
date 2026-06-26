@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zotero 简报</title>
   <link rel="stylesheet" href="/static/note-view.css">
+  <link rel="stylesheet" href="/static/katex/katex.min.css">
   <style>
     :root {
       --bg: #f5f5f7; --sidebar: #fff; --card: #fff; --accent: #007aff;
@@ -278,7 +279,7 @@
           <p id="prepare_launchd_status" class="hint">预生成任务：加载中…</p>
           <div class="actions">
             <button class="btn-secondary" onclick="refreshStatus()">刷新</button>
-            <button class="btn-secondary" onclick="testNotify()">测试通知</button>
+            <button class="btn-secondary" onclick="testNotify()">测试推送（示例）</button>
             <button class="btn-primary" onclick="runNow(false)">立即推送</button>
             <button class="btn-danger" onclick="runNow(true)">强制推送</button>
           </div>
@@ -895,15 +896,21 @@
     }
 
     async function testNotify() {
+      toast('发送示例推送…');
       const res = await fetch('/api/test-notify', { method: 'POST' });
       const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '示例推送失败');
+        return;
+      }
       if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
       if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
-      let msg = data.ok ? '测试通知已发送' : '通知失败';
+      let msg = data.ok ? '示例推送已发送' : '示例推送失败';
       if (data.ok && data.notifications_failed > 0) {
-        msg = '测试通知未弹出，请查看日志';
+        msg = '示例推送未弹出，请查看日志';
       }
       toast(msg);
+      loadNotes();
     }
 
     async function refreshStatus() {
