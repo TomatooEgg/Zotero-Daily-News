@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from platform_utils import is_macos, is_windows, open_target
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
 LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
@@ -278,8 +280,43 @@ def _notify_osascript(title: str, message: str, subtitle: str, verbose: bool) ->
     return result.returncode == 0 and not broken
 
 
+def _notify_windows_toast(title: str, message: str, subtitle: str, verbose: bool) -> bool:
+    script = r"""
+$ErrorActionPreference = "Stop"
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
+$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02
+$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template)
+$texts = $xml.GetElementsByTagName("text")
+$texts.Item(0).AppendChild($xml.CreateTextNode($env:ZDN_TOAST_TITLE)) > $null
+$body = $env:ZDN_TOAST_MESSAGE
+if ($env:ZDN_TOAST_SUBTITLE) { $body = "$($env:ZDN_TOAST_SUBTITLE)`n$body" }
+$texts.Item(1).AppendChild($xml.CreateTextNode($body)) > $null
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Zotero Daily News").Show($toast)
+"""
+    env = {
+        **os.environ,
+        "ZDN_TOAST_TITLE": title[:120],
+        "ZDN_TOAST_SUBTITLE": subtitle[:120],
+        "ZDN_TOAST_MESSAGE": message[:240],
+    }
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if verbose:
+        print(f"[windows-toast] exit={result.returncode}", file=sys.stderr)
+        if result.stderr.strip():
+            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
+    return result.returncode == 0
+
+
 def _fallback_alert(hub_path: Path | None, verbose: bool, *, note_id: str | None = None) -> None:
-    subprocess.run(["afplay", "/System/Library/Sounds/Glass.aiff"], check=False)
+    if is_macos():
+        subprocess.run(["afplay", "/System/Library/Sounds/Glass.aiff"], check=False)
     _open_notify_target(note_id, hub_path)
     if verbose:
         print("[fallback] 已播放提示音并打开中转页", file=sys.stderr)
@@ -320,6 +357,15 @@ def notify_macos(
             print(f"  按钮「{SUMMARY_ACTION}」→ App 已开则跳转条目，否则 {hub_path.resolve().as_uri()}")
             print(f"  按钮「{DEFER_ACTION}」→ 保留缓存，暂不写入 App 当日内容")
         return True, SUMMARY_ACTION
+
+    if not is_macos():
+        if is_windows() and _notify_windows_toast(title, message, subtitle, verbose):
+            return True, IMMEDIATE_PUBLISH_ACTION
+        if hub_path and hub_path.exists():
+            open_target(hub_path.resolve())
+        if verbose:
+            print("[fallback] 当前平台未弹出通知，已尝试打开中转页", file=sys.stderr)
+        return bool(hub_path and hub_path.exists()), IMMEDIATE_PUBLISH_ACTION
 
     hub_uri = hub_path.resolve().as_uri() if hub_path and hub_path.exists() else None
     sender = detect_sender()

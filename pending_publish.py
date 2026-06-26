@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from config_manager import SCRIPT_DIR
+from config_manager import runtime_path
 
-PENDING_PATH = SCRIPT_DIR / "pending_publish.json"
+PENDING_PATH = runtime_path("pending_publish.json")
 
 
 def _load() -> set[str]:
@@ -28,6 +28,7 @@ def _load() -> set[str]:
 
 
 def _save(note_ids: set[str]) -> None:
+    PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
     with PENDING_PATH.open("w", encoding="utf-8") as f:
         json.dump({"note_ids": sorted(note_ids)}, f, ensure_ascii=False, indent=2)
 

@@ -8,6 +8,7 @@ import threading
 import time
 
 from net_env import connect_zotero
+from platform_utils import open_target
 
 
 def _is_zotero_api_ready() -> bool:
@@ -56,11 +57,11 @@ def open_zotero_deeplink(url: str) -> None:
     if sys.platform == "darwin":
         ensure_zotero_running()
 
-    subprocess.run(["open", url], check=False, timeout=5)
+    open_target(url)
 
     if sys.platform == "darwin" and not was_ready and "/select/" in url:
         time.sleep(0.5)
-        subprocess.run(["open", url], check=False, timeout=5)
+        open_target(url)
 
     # pywebview 在 fetch 返回后常会抢回焦点，导致 Zotero 标签栏变灰；延迟再激活两次兜底。
     _activate_zotero_delayed(0.35)

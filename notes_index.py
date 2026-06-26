@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
+from config_manager import load_config, resolve_output_dirs, runtime_path
 from pending_publish import is_pending
 
-HISTORY_PATH = SCRIPT_DIR / "history.json"
+HISTORY_PATH = runtime_path("history.json")
 
 DATE_RE = re.compile(r"^(\d{8})_([A-Z0-9]+)_(.+)\.md$", re.IGNORECASE)
 BRIEFING_RE = re.compile(r"^>\s*\*\*头条简报\*\*[：:]\s*(.+)$", re.MULTILINE)
@@ -167,6 +167,7 @@ def _sync_history_after_delete(deleted_item_keys: list[str]) -> None:
             del items[key]
             changed = True
     if changed:
+        HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         with HISTORY_PATH.open("w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
 

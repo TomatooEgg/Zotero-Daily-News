@@ -12,14 +12,14 @@ from typing import Any
 
 from openai import OpenAI
 
-from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
+from config_manager import load_config, resolve_output_dirs, runtime_path
 from net_env import connect_zotero
 from notes_index import NoteEntry, latest_notes_by_item_key
 from pending_publish import mark_pending
 from summary_io import clean_terms, ensure_hub_path, write_outputs
 from zotero_links import get_pdf_attachment
 
-QUEUE_PATH = SCRIPT_DIR / "queue.json"
+QUEUE_PATH = runtime_path("queue.json")
 
 STATUS_PENDING = "pending"
 STATUS_READY = "ready"
@@ -64,6 +64,7 @@ def load_queue() -> dict[str, Any] | None:
 
 
 def save_queue(queue: dict[str, Any]) -> None:
+    QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with QUEUE_PATH.open("w", encoding="utf-8") as f:
         json.dump(queue, f, ensure_ascii=False, indent=2)
 

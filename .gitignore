@@ -1,7 +1,9 @@
 # 环境与密钥
 .env
 .env.save
+config.yaml
 .venv/
+.build-venv/
 
 # 运行时生成
 summaries/

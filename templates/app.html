@@ -128,6 +128,13 @@
     .badge.skipped { background: #fef3c7; color: #92400e; }
     pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 10px; font-size: 12px; overflow: auto; max-height: 200px; white-space: pre-wrap; }
     #toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 18px; border-radius: 10px; display: none; font-size: 14px; z-index: 99; }
+    .setup-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 120; }
+    .setup-backdrop.open { display: flex; }
+    .setup-modal { background: #fff; width: min(720px, 100%); max-height: 92vh; overflow-y: auto; border-radius: 14px; box-shadow: 0 20px 70px rgba(0,0,0,.25); padding: 22px; }
+    .setup-modal h2 { font-size: 1.2rem; margin-bottom: 6px; }
+    .setup-modal h3 { font-size: .95rem; margin: 18px 0 10px; }
+    .setup-modal .hint { margin-bottom: 12px; }
+    .setup-status { min-height: 20px; font-size: 13px; margin-top: 10px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -199,6 +206,25 @@
               <label>HTML 中转页路径</label>
               <input id="hubs_dir" value="{{ config.hubs_dir }}">
             </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>DeepSeek</h2>
+          <p class="hint" id="deepseek_config_status">加载中…</p>
+          <div class="row">
+            <div>
+              <label>API Key</label>
+              <input id="deepseek_api_key" type="password" autocomplete="off" placeholder="sk-...">
+              <div class="hint">留空保存则保留已有 Key</div>
+            </div>
+            <div>
+              <label>Base URL</label>
+              <input id="deepseek_base_url" value="https://api.deepseek.com">
+            </div>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn-secondary" onclick="testDeepSeekConfig()">测试连接</button>
+            <button type="button" class="btn-primary" onclick="saveDeepSeekConfig()">保存 DeepSeek</button>
           </div>
         </div>
         <div class="card">
@@ -275,7 +301,7 @@
         </div>
         <div class="card">
           <h2>状态</h2>
-          <p>推送任务：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
+          <p>定时任务（{{ scheduler_name }}）：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
           <p id="prepare_launchd_status" class="hint">预生成任务：加载中…</p>
           <div class="actions">
             <button class="btn-secondary" onclick="refreshStatus()">刷新</button>
@@ -294,6 +320,51 @@
   </div>
 
   <div id="toast"></div>
+  <div class="setup-backdrop" id="setup_modal">
+    <div class="setup-modal">
+      <h2>首次配置</h2>
+      <p class="hint">填写必要凭证并验证通过后，再启用定时推送任务。</p>
+
+      <h3>DeepSeek</h3>
+      <div class="row">
+        <div>
+          <label>API Key</label>
+          <input id="setup_deepseek_api_key" type="password" autocomplete="off" placeholder="sk-...">
+        </div>
+        <div>
+          <label>Base URL</label>
+          <input id="setup_deepseek_base_url" value="https://api.deepseek.com">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>简报模型</label>
+          <input id="setup_deepseek_briefing_model" value="{{ config.deepseek_briefing_model }}">
+        </div>
+        <div>
+          <label>深度解读模型</label>
+          <input id="setup_deepseek_deep_read_model" value="{{ config.deepseek_deep_read_model }}">
+        </div>
+      </div>
+
+      <h3>Zotero 写入 Key</h3>
+      <div class="row">
+        <div>
+          <label>API Key</label>
+          <input id="setup_zotero_api_key" type="password" autocomplete="off" placeholder="zotero.org/settings/keys">
+        </div>
+        <div>
+          <label>Library ID（可选）</label>
+          <input id="setup_zotero_library_id" placeholder="留空则自动解析">
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="setup_verify_btn" onclick="completeFirstRunSetup()">验证并启用定时任务</button>
+        <button class="btn-secondary" onclick="closeSetupModal()">稍后配置</button>
+      </div>
+      <div class="setup-status" id="setup_status"></div>
+    </div>
+  </div>
 
   <script src="/static/note-view.js"></script>
   <script>
@@ -319,7 +390,7 @@
         document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
         if (tab.dataset.panel === 'notes') loadNotes();
         if (tab.dataset.panel === 'actions') { refreshStatus(); loadQueue(); }
-        if (tab.dataset.panel === 'settings') loadZoteroConfig();
+        if (tab.dataset.panel === 'settings') { loadDeepSeekConfig(); loadZoteroConfig(); }
       });
     });
 
@@ -328,6 +399,36 @@
       el.textContent = msg;
       el.style.display = 'block';
       setTimeout(() => el.style.display = 'none', 3000);
+    }
+
+    function setSetupStatus(msg) {
+      const el = document.getElementById('setup_status');
+      if (el) el.textContent = msg || '';
+    }
+
+    function closeSetupModal() {
+      document.getElementById('setup_modal').classList.remove('open');
+    }
+
+    function openSetupModal() {
+      document.getElementById('setup_modal').classList.add('open');
+    }
+
+    async function loadSetupStatus() {
+      try {
+        const res = await fetch('/api/setup/status');
+        const data = await res.json();
+        if (!res.ok) return;
+        if (data.deepseek) {
+          document.getElementById('setup_deepseek_base_url').value = data.deepseek.base_url || 'https://api.deepseek.com';
+          document.getElementById('setup_deepseek_briefing_model').value = data.deepseek.briefing_model || '';
+          document.getElementById('setup_deepseek_deep_read_model').value = data.deepseek.deep_read_model || '';
+        }
+        if (data.zotero) {
+          document.getElementById('setup_zotero_library_id').value = data.zotero.library_id || '';
+        }
+        if (data.needs_setup) openSetupModal();
+      } catch (_) {}
     }
 
     function loadStarred() {
@@ -729,6 +830,60 @@
       toast(data.message || '已保存');
     }
 
+    async function loadDeepSeekConfig() {
+      const statusEl = document.getElementById('deepseek_config_status');
+      if (!statusEl) return;
+      try {
+        const res = await fetch('/api/deepseek-config');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '加载失败');
+        statusEl.textContent = data.configured
+          ? '已配置（' + (data.api_key_masked || '••••') + '）'
+          : '未配置 — 填写 API Key 后才能生成 AI 简报和深度解读';
+        document.getElementById('deepseek_base_url').value = data.base_url || 'https://api.deepseek.com';
+        document.getElementById('deepseek_briefing_model').value = data.briefing_model || '';
+        document.getElementById('deepseek_deep_read_model').value = data.deep_read_model || '';
+        document.getElementById('deepseek_api_key').value = '';
+      } catch (err) {
+        statusEl.textContent = err.message || '加载失败';
+      }
+    }
+
+    async function saveDeepSeekConfig(extra) {
+      const body = extra || {
+        api_key: document.getElementById('deepseek_api_key').value.trim(),
+        base_url: document.getElementById('deepseek_base_url').value.trim(),
+        briefing_model: document.getElementById('deepseek_briefing_model').value.trim(),
+        deep_read_model: document.getElementById('deepseek_deep_read_model').value.trim(),
+      };
+      const res = await fetch('/api/deepseek-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || '保存失败');
+      if (!extra) {
+        toast(data.message || 'DeepSeek 配置已保存');
+        document.getElementById('deepseek_api_key').value = '';
+        loadDeepSeekConfig();
+      }
+      return data;
+    }
+
+    async function testDeepSeekConfig() {
+      try {
+        await saveDeepSeekConfig();
+        toast('测试 DeepSeek 连接中…');
+        const res = await fetch('/api/deepseek-config/test', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '连接失败');
+        toast(data.message || 'DeepSeek 连接成功');
+      } catch (err) {
+        toast(err.message || 'DeepSeek 连接失败');
+      }
+    }
+
     async function loadZoteroConfig() {
       const statusEl = document.getElementById('zotero_config_status');
       if (!statusEl) return;
@@ -786,6 +941,62 @@
       const res = await fetch('/api/reload-schedule', { method: 'POST' });
       const data = await res.json();
       toast(data.message);
+    }
+
+    async function completeFirstRunSetup() {
+      const btn = document.getElementById('setup_verify_btn');
+      btn.disabled = true;
+      setSetupStatus('保存配置…');
+      try {
+        const deepseekBody = {
+          api_key: document.getElementById('setup_deepseek_api_key').value.trim(),
+          base_url: document.getElementById('setup_deepseek_base_url').value.trim(),
+          briefing_model: document.getElementById('setup_deepseek_briefing_model').value.trim(),
+          deep_read_model: document.getElementById('setup_deepseek_deep_read_model').value.trim(),
+        };
+        await saveDeepSeekConfig(deepseekBody);
+
+        const zoteroBody = {
+          api_key: document.getElementById('setup_zotero_api_key').value.trim(),
+          library_id: document.getElementById('setup_zotero_library_id').value.trim(),
+        };
+        let res = await fetch('/api/zotero-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zoteroBody),
+        });
+        let data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Zotero 凭证保存失败');
+
+        setSetupStatus('验证 DeepSeek…');
+        res = await fetch('/api/deepseek-config/test', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'DeepSeek 验证失败');
+
+        setSetupStatus('验证 Zotero 写入 Key…');
+        res = await fetch('/api/zotero-config/test', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'Zotero 验证失败');
+        if (data.library_id) document.getElementById('setup_zotero_library_id').value = data.library_id;
+
+        setSetupStatus('启用定时任务…');
+        await saveConfig();
+        res = await fetch('/api/reload-schedule', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '定时任务启用失败');
+
+        setSetupStatus('配置完成');
+        closeSetupModal();
+        toast('配置完成，定时任务已启用');
+        loadDeepSeekConfig();
+        loadZoteroConfig();
+        refreshStatus();
+      } catch (err) {
+        setSetupStatus(err.message || '配置失败');
+        toast(err.message || '配置失败');
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function runNow(force) {
@@ -1015,7 +1226,9 @@
       const noteId = params.get('note');
       if (noteId) navigateToNote(noteId);
     });
+    loadDeepSeekConfig();
     loadZoteroConfig();
+    loadSetupStatus();
   </script>
 </body>
 </html>

@@ -1,56 +1,44 @@
-# Zotero 每日头条弹窗
+# Zotero Daily News
 
-从 Zotero 文献库中定时抽取待读论文，用 DeepSeek 生成中文阅读简报，并通过 macOS 通知推送。附带本地 Web / 原生窗口控制台，可浏览历史简报、生成深度解读与摘要翻译。
+Daily Zotero paper digest with DeepSeek summaries, a local control panel, scheduled delivery, and optional Zotero note backfill.
 
-**仓库**：[TomatooEgg/Zotero-Daily-News](https://github.com/TomatooEgg/Zotero-Daily-News)
+Repository: [TomatooEgg/Zotero-Daily-News](https://github.com/TomatooEgg/Zotero-Daily-News)
 
-**平台要求**：macOS 11+，已安装并运行 [Zotero](https://www.zotero.org/)。
+## Platforms
 
-## 功能概览
+- Windows 10/11 x86_64
+- macOS 11+
+- Zotero must be installed and running
 
-- **定时推送**：按 `config.yaml` 中的时间表，从待推清单推送已预生成的简报；推送前可随机选文并预生成深度解读
-- **AI 简报**：基于文献元数据（标题、作者、摘要等）生成结构化中文总结，写入 Markdown 并附带 HTML 中转页
-- **深度解读**：在笔记视图中基于 PDF 正文调用 DeepSeek 生成更详细的章节解读（可选）
-- **摘要翻译**：将英文摘要翻译为中文（可选）
-- **关键术语对照**：总结中列出核心专有名词的中英文对照（如 `流形[manifold]`）
-- **控制台界面**：配置推送参数、手动触发、查看日志、管理历史笔记
-- **原生窗口**：双击 `Zotero 简报.app` 打开 pywebview 窗口；hub 冷启动由同目录 `Zotero Digest Link.app` 处理 `zotero-digest://` 深链接
+In Zotero, enable local API access:
 
-### 弹窗
-<img width="727" height="489" alt="弹窗" src="https://github.com/user-attachments/assets/1d87d011-8d66-4674-b3fd-53b023e442c4" />
+`Settings -> Advanced -> Allow other applications on this computer to communicate with Zotero`
 
-### 基础简报
-https://github.com/user-attachments/assets/91243bc2-dd0d-4f5f-b848-c5f1c1b18c84
-### 链接Zotero
-https://github.com/user-attachments/assets/7cb22dd1-7f02-49df-914a-074837cca5a9
-### 历史记录
-<img width="2212" height="1738" alt="history" src="https://github.com/user-attachments/assets/f59b74b6-dbc6-4c14-9fbb-ed91ddf83859" />
+## Windows Quick Start
 
-### 摘要翻译
-https://github.com/user-attachments/assets/0ae97039-1637-4f83-a92b-67d3ab091e37
+Use one of the release artifacts:
 
-### 深度解读
+- `Zotero-Daily-News-Windows-x86_64.msi`
+- `Zotero-Daily-News-Windows-x86_64-Portable.zip`
 
+For the MSI, double-click the installer and start **Zotero Daily News** from the desktop shortcut or Start menu.
 
-https://github.com/user-attachments/assets/b3e8ab46-d3a3-4087-931d-315171452c7e
+For the portable ZIP, unzip it and run `Zotero Daily News.exe`.
 
+On first launch the setup wizard asks for:
 
+- DeepSeek API key
+- DeepSeek base URL and model names
+- Zotero API key with write permission
+- Optional Zotero library ID
 
-*仅针对Zotero中有摘要项内容的文献
-*初次生成时需短暂加载
+The app saves the settings, tests DeepSeek and Zotero, then enables scheduled tasks only after validation succeeds.
 
+Windows scheduling uses Task Scheduler tasks named `ZoteroDailyNews\Push*` and `ZoteroDailyNews\Prepare*`.
 
-### 自定义优先tag与发送时间
-<img width="1548" height="1566" alt="截屏2026-06-13 12 46 49" src="https://github.com/user-attachments/assets/76b99412-2f3f-4faa-a1ee-8921f7f16696" />
-*优先选取带有该tag的内容进行推送，tag从zotero中读取
+## macOS Quick Start
 
-
-### 自定义总结prompt
-<img width="1436" height="1540" alt="截屏2026-06-13 13 46 21" src="https://github.com/user-attachments/assets/d51ba67a-6e2f-41ef-bc13-44db8fbb9760" />
-
-## 快速开始
-
-### 1. 安装
+From source:
 
 ```bash
 git clone https://github.com/TomatooEgg/Zotero-Daily-News.git
@@ -58,138 +46,114 @@ cd Zotero-Daily-News
 bash install.sh
 ```
 
-`install.sh` 会：
+`install.sh` creates the Python environment, installs dependencies, builds the macOS app bundle, and creates the desktop shortcut. It does not register launchd immediately. Start the app first, complete the setup wizard, then use the control panel to enable scheduled delivery.
 
-- 创建 Python 虚拟环境并安装依赖
-- 从 `.env.example` 复制 `.env`（若不存在）
-- 安装 `terminal-notifier` / `alerter` 到 `bin/`（若系统已安装）
-- 注册 launchd 定时任务
-- 构建 `Zotero 简报.app` 并在桌面创建快捷方式
+For a DMG build, open the app from the DMG and complete the same first-launch wizard. Do not edit `.env` inside the app bundle.
 
-### 2. 配置
+macOS scheduling uses launchd after setup validation.
 
-**环境变量**（`.env`）：
+## Source Usage
 
 ```bash
-DEEPSEEK_API_KEY=sk-your-key-here
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt  # Windows PowerShell
+.venv\Scripts\python launcher.py
 ```
 
-**Zotero**：保持 Zotero 运行，并在 **设置 → 高级** 中开启「Allow other applications on this computer to communicate with Zotero」。
-
-**应用配置**（`config.yaml` 或控制台界面）：
-
-
-| 配置项              | 说明               | 默认值                   |
-| ---------------- | ---------------- | --------------------- |
-| `priority_tag`   | 优先抽取的标签          | `want`                |
-| `count`          | 每次推送篇数           | `2`                   |
-| `history_days`   | 去重天数（近期已推送的不再选）  | `14`                  |
-| `queue.size`     | 待推清单随机选文篇数（≥ count） | `4`                   |
-| `queue.prepare_before_minutes` | 推送前多久自动预生成 | `120`                 |
-| `schedule`       | launchd 定时（可多时段） | 12:01、18:00           |
-| `summary_prompt` | 元数据简报 Prompt     | 见 `config_manager.py` |
-| `pdf_summary`    | 深度解读相关配置         | 默认启用                  |
-| `ui.port`        | 本地 Web 服务端口      | `18765`               |
-
-
-### 3. 使用
-
-
-| 方式     | 命令 / 操作                                        |
-| ------ | ---------------------------------------------- |
-| 原生窗口   | 双击 `Zotero 简报.app` 或 `~/Desktop/Zotero 简报.app` |
-| 命令行 UI | `bash start_ui.sh`                             |
-| 手动推送   | 控制台「立即推送」或 `bash run.sh --push-queue` |
-| 强制推送   | `bash run.sh --force`（忽略清单，即时抽选生成） |
-| 刷新待推清单 | `bash run.sh --refresh-queue` 或控制台 |
-| 预生成     | `bash prepare_queue.sh` 或控制台「预生成」 |
-| 仅预览    | `bash run.sh --dry-run --push-queue`             |
-| 跳过 AI  | `bash run.sh --metadata-only`                  |
-| 测试通知   | `bash run.sh --test-notify`                    |
-| 通知诊断   | `bash run.sh --diagnose-notify`                |
-| 重建中转页  | `.venv/bin/python rebuild_hubs.py`             |
-
-
-点击 macOS 通知后会打开 HTML 中转页，可查看完整简报、跳转 Zotero 条目或 PDF。中转页点「简报 App」冷启动时，需项目目录同时存在 `Zotero 简报.app` 与 `Zotero Digest Link.app`（`./build_app.sh` 会构建并注册深链接）；hub 静态资源在 `hubs/_assets/`。
-
-## 项目结构
-
-```
-Zotero-Daily-News/
-├── digest.py           # 主流程：待推清单 / 抽文献 → AI 总结 → 写文件 → 通知
-├── queue_manager.py    # 待推清单：随机选文、预生成、推送
-├── prepare_queue.sh    # launchd 预生成脚本
-├── app.py              # Flask 控制台与笔记 API
-├── launcher.py         # 启动 Web 服务 + pywebview 窗口
-├── config.yaml         # 用户配置
-├── config_manager.py   # 配置读写
-├── summary_io.py       # Markdown / HTML 输出
-├── notes_index.py      # 历史笔记索引
-├── note_view.py        # 笔记阅读视图渲染
-├── deep_read.py        # PDF 深度解读
-├── abstract_zh.py      # 摘要中译
-├── pdf_text.py         # PDF 文本提取
-├── zotero_links.py     # Zotero 链接与 PDF 检索
-├── notifier.py         # macOS 通知
-├── url_handler.py      # 深链接 zotero-digest://
-├── launchd_mgr.py      # launchd 定时任务
-├── rebuild_hubs.py     # 批量重建 HTML 中转页
-├── install.sh          # 一键安装
-├── build_app.sh        # 构建 .app
-├── run.sh              # 运行 digest.py
-├── start_ui.sh         # 运行 launcher.py
-├── templates/          # Jinja2 模板
-├── static/             # 笔记视图 CSS / JS
-├── summaries/          # 生成的 Markdown（运行时，已 gitignore）
-├── hubs/               # HTML 中转页（运行时，已 gitignore）
-├── logs/               # launchd 日志（运行时，已 gitignore）
-├── bin/                # terminal-notifier、alerter（安装时复制）
-└── Zotero 简报.app/    # 可双击启动（构建产物，已 gitignore）
-```
-
-## 依赖
-
-见 `requirements.txt`，主要包括：
-
-- `pyzotero` — Zotero 本地 API
-- `openai` — DeepSeek API（OpenAI 兼容）
-- `flask` — Web 控制台
-- `pywebview` — 原生窗口（可选，缺失时回退到浏览器）
-- `pypdf` — PDF 文本提取
-- `pyyaml`、`markdown`
-
-系统工具（建议通过 Homebrew 安装）：
+On macOS/Linux:
 
 ```bash
-brew install terminal-notifier
-brew install vjeantet/tap/alerter   # 可选，通知「查看总结」按钮
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python launcher.py
 ```
 
-## 常见问题
+Common commands:
 
-**无法连接 Zotero**  
-确认 Zotero 已启动，且高级设置中允许本地 API 通信。
+| Action | Windows | macOS/Linux |
+| --- | --- | --- |
+| Start UI | `.\start_ui.ps1` | `bash start_ui.sh` |
+| Manual push | `.\run.ps1 --push-queue` | `bash run.sh --push-queue` |
+| Refresh queue | `.\run.ps1 --refresh-queue` | `bash run.sh --refresh-queue` |
+| Pre-generate | `.\prepare_queue.ps1` | `bash prepare_queue.sh` |
+| Preview only | `.\run.ps1 --dry-run --push-queue` | `bash run.sh --dry-run --push-queue` |
+| Skip AI | `.\run.ps1 --metadata-only` | `bash run.sh --metadata-only` |
 
-**打开 VPN 后无法连接 Zotero**  
-本项目已默认让本地地址绕过系统代理。若仍失败，请确认 Zotero 已启动；也可在 shell 中手动设置 `export NO_PROXY=localhost,127.0.0.1,::1` 后重试。
+## Configuration
 
-**通知不显示**  
-运行 `bash run.sh --diagnose-notify` 检查；确认系统通知权限已授予 Terminal / Python / 简报 App。
+The single source of built-in defaults is `config_manager.DEFAULT_CONFIG`.
 
-**DeepSeek 调用失败**  
-检查 `.env` 中 `DEEPSEEK_API_KEY`；无 Key 时可用 `--metadata-only` 仅输出元数据摘要。
+`config.example.yaml` is an example file for source users. Runtime configuration is written to the user config directory, not the repository.
 
-**回推 Zotero 失败**  
-在控制台 → 设置 → **Zotero 回推** 填写 API Key（[zotero.org/settings/keys](https://www.zotero.org/settings/keys)，需 library 写入权限）。也可在 `.env` 中设置 `ZOTERO_API_KEY` 与可选的 `ZOTERO_LIBRARY_ID`。
+Default values:
 
-**修改定时后未生效**  
-在控制台点击「重载定时任务」，或运行：
+| Key | Default |
+| --- | --- |
+| `priority_tag` | `want` |
+| `count` | `2` |
+| `history_days` | `14` |
+| `queue.size` | `4` |
+| `queue.prepare_before_minutes` | `120` |
+| `schedule` | `10:00`, `18:00` |
+| `ui.port` | `18765` |
 
-```bash
-.venv/bin/python -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); reload_launchd(c)"
+User config paths:
+
+| Platform | Config and `.env` |
+| --- | --- |
+| Windows | `%APPDATA%\Zotero Daily News\` |
+| macOS | `~/Library/Application Support/Zotero Daily News/` |
+| Linux | `$XDG_CONFIG_HOME/zotero-daily-news/` or `~/.config/zotero-daily-news/` |
+
+Runtime state paths:
+
+| Platform | Runtime files |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\Zotero Daily News\` |
+| macOS | `~/Library/Application Support/Zotero Daily News/` |
+| Linux | `$XDG_STATE_HOME/zotero-daily-news/` or `~/.local/state/zotero-daily-news/` |
+
+Runtime files include `history.json`, `queue.json`, `pending_publish.json`, `summaries/`, `hubs/`, and `logs/`.
+
+## Build Windows Artifacts
+
+Run on Windows:
+
+```powershell
+.\build_windows.ps1
 ```
 
+Outputs:
 
-## 许可证
+- `dist\Zotero-Daily-News-Windows-x86_64.msi`
+- `dist\Zotero-Daily-News-Windows-x86_64-Portable.zip`
+
+## CI
+
+GitHub Actions runs tests on Windows and macOS for pull requests and pushes. A manual workflow or tag build also produces the Windows MSI and portable ZIP.
+
+## Security
+
+Markdown/LLM output is sanitized before HTML rendering. Unsafe tags, event attributes, `javascript:` URLs, and images are stripped while Markdown tables, code blocks, Mermaid classes, and Zotero links are preserved.
+
+## Troubleshooting
+
+**Cannot connect to Zotero**
+
+Make sure Zotero is running and local API access is enabled.
+
+**DeepSeek validation fails**
+
+Check the API key, base URL, and model names in the setup wizard or Settings tab.
+
+**Zotero backfill fails**
+
+Create a Zotero API key at [zotero.org/settings/keys](https://www.zotero.org/settings/keys) with library write permission, then re-run setup validation.
+
+**Scheduled delivery did not update**
+
+Open the control panel and click the scheduler reload button after changing schedule settings.
+
+## License
 
 [MIT License](LICENSE)

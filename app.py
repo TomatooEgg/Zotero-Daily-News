@@ -5,20 +5,26 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 import os
 import subprocess
+import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
+from openai import OpenAI
 
 from abstract_zh import generate_abstract_zh
-from config_manager import DEFAULT_CONFIG, SCRIPT_DIR, deepseek_briefing_model, deepseek_deep_read_model, load_config, resolve_output_dirs, save_config
+from config_manager import DEFAULT_CONFIG, ENV_PATH, SCRIPT_DIR, deepseek_briefing_model, deepseek_deep_read_model, load_config, logs_dir, resolve_output_dirs, save_config
 from deep_read import generate_deep_read
-from launchd_mgr import launchd_status, reload_launchd
+from env_store import parse_env_file, set_env_values
 from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
+from platform_utils import open_target, reveal_path
 from push_finalize import apply_push_results
+from scheduler import reload_scheduler, scheduler_status
 from app_bridge import navigate_to_note, yield_focus_to_external_app
 from url_handler import open_digest_app_for_note
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
@@ -26,7 +32,16 @@ from zotero_open import open_zotero_deeplink
 from seed_test_note import ensure_test_note
 from zotero_push import push_digest_note, push_status
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(SCRIPT_DIR / "templates"),
+    static_folder=str(SCRIPT_DIR / "static"),
+)
+_error_log = logs_dir() / "app-error.log"
+_handler = RotatingFileHandler(_error_log, maxBytes=512_000, backupCount=2, encoding="utf-8")
+_handler.setLevel(logging.ERROR)
+_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+app.logger.addHandler(_handler)
 
 _generating_deep_read: set[str] = set()
 _generating_abstract_zh: set[str] = set()
@@ -72,21 +87,43 @@ def config_for_ui() -> dict:
     }
 
 
+def mask_secret(value: str) -> str:
+    value = value.strip()
+    if len(value) <= 8:
+        return "••••" if value else ""
+    return f"{value[:4]}…{value[-4:]}"
+
+
 def load_env() -> dict[str, str]:
-    env_path = SCRIPT_DIR / ".env"
-    extra: dict[str, str] = {}
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                extra[k.strip()] = v.strip().strip('"').strip("'")
-    return extra
+    return parse_env_file(ENV_PATH)
+
+
+def deepseek_config_for_ui() -> dict:
+    env = {**load_env(), **os.environ}
+    key = (env.get("DEEPSEEK_API_KEY") or "").strip()
+    cfg = load_config()
+    return {
+        "configured": bool(key),
+        "api_key_masked": mask_secret(key),
+        "base_url": str((cfg.get("deepseek") or {}).get("base_url") or "https://api.deepseek.com"),
+        "briefing_model": deepseek_briefing_model(cfg),
+        "deep_read_model": deepseek_deep_read_model(cfg),
+    }
 
 
 def python_bin() -> str:
-    venv_py = SCRIPT_DIR / ".venv" / "bin" / "python"
-    return str(venv_py if venv_py.exists() else "python3")
+    if getattr(sys, "frozen", False):
+        cli = Path(sys.executable).with_name("Zotero Daily News CLI.exe")
+        return str(cli if cli.exists() else Path(sys.executable))
+    candidates = [
+        SCRIPT_DIR / ".venv" / "Scripts" / "python.exe",
+        SCRIPT_DIR / ".venv" / "bin" / "python",
+        SCRIPT_DIR / ".venv" / "bin" / "python3",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 def is_apple_silicon() -> bool:
@@ -105,7 +142,10 @@ def is_apple_silicon() -> bool:
 
 def python_cmd(*script_args: str) -> list[str]:
     """构建 Python 子进程命令；在 Apple Silicon 上强制 arm64，避免 Rosetta 下加载 arm64 wheel 失败。"""
-    cmd = [python_bin(), *script_args]
+    if getattr(sys, "frozen", False) and script_args and Path(script_args[0]).name == "digest.py":
+        cmd = [python_bin(), *script_args[1:]]
+    else:
+        cmd = [python_bin(), *script_args]
     if is_apple_silicon():
         return ["arch", "-arm64", *cmd]
     return cmd
@@ -153,11 +193,12 @@ def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str, 
 
 @app.get("/")
 def index():
-    status = launchd_status()
+    status = scheduler_status()
     return render_template(
         "app.html",
         config=config_for_ui(),
         launchd_loaded=status["loaded"],
+        scheduler_name=status["name"],
         project_dir=str(SCRIPT_DIR),
     )
 
@@ -216,7 +257,7 @@ def reveal_in_finder(path: Path) -> tuple[bool, str]:
             continue
     if not allowed:
         return False, "路径无效"
-    subprocess.run(["open", "-R", str(resolved)], check=False)
+    reveal_path(resolved)
     return True, ""
 
 
@@ -260,7 +301,7 @@ def api_open_url():
         open_zotero_deeplink(url)
         yield_focus_to_external_app()
     else:
-        subprocess.run(["open", url], check=False, timeout=5)
+        open_target(url)
     return jsonify({"ok": True})
 
 
@@ -347,6 +388,61 @@ def api_generate_abstract_zh(note_id: str):
 @app.get("/api/zotero-config")
 def api_get_zotero_config():
     return jsonify(zotero_config_for_ui())
+
+
+@app.get("/api/deepseek-config")
+def api_get_deepseek_config():
+    return jsonify(deepseek_config_for_ui())
+
+
+@app.post("/api/deepseek-config")
+def api_save_deepseek_config():
+    data = request.get_json(silent=True) or {}
+    api_key = str(data.get("api_key") or "").strip()
+    cfg = load_config()
+    cfg.setdefault("deepseek", {})
+    if data.get("base_url") is not None:
+        cfg["deepseek"]["base_url"] = str(data.get("base_url") or "https://api.deepseek.com").strip()
+    if data.get("briefing_model") is not None:
+        cfg["deepseek"]["briefing_model"] = str(data.get("briefing_model") or "").strip()
+    if data.get("deep_read_model") is not None:
+        cfg["deepseek"]["deep_read_model"] = str(data.get("deep_read_model") or "").strip()
+    cfg["deepseek"]["briefing_model"] = cfg["deepseek"].get("briefing_model") or DEFAULT_CONFIG["deepseek"]["briefing_model"]
+    cfg["deepseek"]["deep_read_model"] = cfg["deepseek"].get("deep_read_model") or DEFAULT_CONFIG["deepseek"]["deep_read_model"]
+    cfg["deepseek"].pop("model", None)
+    save_config(cfg)
+    if api_key:
+        set_env_values({"DEEPSEEK_API_KEY": api_key})
+    return jsonify({"ok": True, "message": "DeepSeek 配置已保存", **deepseek_config_for_ui()})
+
+
+@app.post("/api/deepseek-config/test")
+def api_test_deepseek_config():
+    env = {**load_env(), **os.environ}
+    api_key = (env.get("DEEPSEEK_API_KEY") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "message": "未配置 DeepSeek API Key"}), 400
+    cfg = load_config()
+    base_url = str((cfg.get("deepseek") or {}).get("base_url") or "https://api.deepseek.com")
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        client.models.list()
+        return jsonify({"ok": True, "message": "DeepSeek 连接成功"})
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+
+
+@app.get("/api/setup/status")
+def api_setup_status():
+    deepseek = deepseek_config_for_ui()
+    zotero = zotero_config_for_ui()
+    schedule = scheduler_status()
+    return jsonify({
+        "needs_setup": not (deepseek["configured"] and zotero["configured"]),
+        "deepseek": deepseek,
+        "zotero": zotero,
+        "scheduler": schedule,
+    })
 
 
 @app.post("/api/zotero-config")
@@ -513,8 +609,8 @@ def api_prepare_queue():
 @app.post("/api/reload-schedule")
 def api_reload_schedule():
     cfg = load_config()
-    ok, message = reload_launchd(cfg)
-    return jsonify({"ok": ok, "message": message, "status": launchd_status()})
+    ok, message = reload_scheduler(cfg)
+    return jsonify({"ok": ok, "message": message, "status": scheduler_status()})
 
 
 @app.post("/api/run")
@@ -579,9 +675,9 @@ def api_test_notify():
 @app.get("/api/status")
 def api_status():
     return jsonify({
-        "launchd": launchd_status(),
-        "stdout": tail_log(SCRIPT_DIR / "logs" / "stdout.log"),
-        "stderr": tail_log(SCRIPT_DIR / "logs" / "stderr.log"),
+        "launchd": scheduler_status(),
+        "stdout": tail_log(logs_dir() / "stdout.log"),
+        "stderr": tail_log(logs_dir() / "stderr.log"),
     })
 
 

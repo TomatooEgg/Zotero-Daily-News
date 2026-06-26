@@ -2,13 +2,67 @@
 
 from __future__ import annotations
 
+import copy
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = SCRIPT_DIR / "config.yaml"
+def _resource_dir() -> Path:
+    pyinstaller_dir = getattr(sys, "_MEIPASS", None)
+    if pyinstaller_dir:
+        return Path(pyinstaller_dir)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+SCRIPT_DIR = _resource_dir()
+APP_DIR_NAME = "Zotero Daily News"
+
+
+def user_config_dir() -> Path:
+    override = os.environ.get("ZOTERO_DAILY_NEWS_CONFIG_DIR")
+    if override:
+        return Path(override).expanduser()
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming"
+        return Path(base) / APP_DIR_NAME
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_DIR_NAME
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "zotero-daily-news"
+
+
+def runtime_dir() -> Path:
+    override = os.environ.get("ZOTERO_DAILY_NEWS_RUNTIME_DIR")
+    if override:
+        root = Path(override).expanduser()
+    elif sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
+        root = Path(base) / APP_DIR_NAME
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support" / APP_DIR_NAME
+    else:
+        root = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "zotero-daily-news"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def runtime_path(name: str) -> Path:
+    return runtime_dir() / name
+
+
+def logs_dir() -> Path:
+    path = runtime_dir() / "logs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+CONFIG_PATH = user_config_dir() / "config.yaml"
+LEGACY_CONFIG_PATH = SCRIPT_DIR / "config.yaml"
+ENV_PATH = user_config_dir() / ".env"
 
 DEFAULT_PROMPT = """你是学术阅读助手。根据文献元数据，生成中文阅读简报。
 
@@ -84,11 +138,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 def load_config() -> dict[str, Any]:
-    if not CONFIG_PATH.exists():
-        return dict(DEFAULT_CONFIG)
-    with CONFIG_PATH.open(encoding="utf-8") as f:
+    path = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
+    if not path.exists():
+        return copy.deepcopy(DEFAULT_CONFIG)
+    with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
-    merged = dict(DEFAULT_CONFIG)
+    merged = copy.deepcopy(DEFAULT_CONFIG)
     merged.update({k: v for k, v in data.items() if v is not None})
     if "output" in data:
         merged["output"] = {**DEFAULT_CONFIG["output"], **(data.get("output") or {})}
@@ -108,6 +163,7 @@ def load_config() -> dict[str, Any]:
 
 
 def save_config(config: dict[str, Any]) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with CONFIG_PATH.open("w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
@@ -120,7 +176,7 @@ def resolve_output_dirs(config: dict[str, Any]) -> tuple[Path, Path]:
     def _resolve(raw: str) -> Path:
         path = Path(raw).expanduser()
         if not path.is_absolute():
-            path = SCRIPT_DIR / path
+            path = runtime_dir() / path
         path.mkdir(parents=True, exist_ok=True)
         return path.resolve()
 

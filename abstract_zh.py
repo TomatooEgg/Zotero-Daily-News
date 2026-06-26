@@ -9,14 +9,13 @@ from typing import Any
 
 from openai import OpenAI
 
-from config_manager import deepseek_briefing_model, load_config, SCRIPT_DIR
+from config_manager import ENV_PATH, deepseek_briefing_model, load_config
 from digest import load_dotenv
 from net_env import connect_zotero
 from md_render import normalize_plaintext
 from notes_index import get_note
 from summary_io import build_hub_html
 
-ENV_PATH = SCRIPT_DIR / ".env"
 ZH_START = "<!-- zh-abstract -->"
 ZH_END = "<!-- /zh-abstract -->"
 

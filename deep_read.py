@@ -10,6 +10,7 @@ from typing import Any
 from openai import OpenAI
 
 from config_manager import (
+    ENV_PATH,
     SCRIPT_DIR,
     build_pdf_summary_messages,
     deepseek_deep_read_model,
@@ -33,7 +34,6 @@ from summary_io import (
 )
 from zotero_links import get_pdf_attachment
 
-ENV_PATH = SCRIPT_DIR / ".env"
 DEEP_READ_HEADING = "## 全文深度解读"
 LEGACY_DEEP_READ_HEADING = "## PDF 深度解读"
 

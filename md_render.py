@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import re
 
+import bleach
 import markdown
 
 from mermaid_sanitize import escape_bare_underscores, escape_pipes_in_table_math
@@ -13,6 +14,56 @@ _MD_EXTENSIONS = ["extra", "nl2br", "sane_lists"]
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
 _TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$")
 _ABSTRACT_SECTION_RE = re.compile(r"(## 摘要\s*\n\n)(.*?)(\n## )", re.DOTALL)
+_ALLOWED_TAGS = frozenset(
+    {
+        "a",
+        "abbr",
+        "blockquote",
+        "br",
+        "code",
+        "dd",
+        "del",
+        "details",
+        "div",
+        "dl",
+        "dt",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "span",
+        "strong",
+        "sub",
+        "summary",
+        "sup",
+        "table",
+        "tbody",
+        "td",
+        "th",
+        "thead",
+        "tr",
+        "ul",
+    }
+)
+_ALLOWED_ATTRIBUTES = {
+    "a": ["href", "title"],
+    "abbr": ["title"],
+    "code": ["class"],
+    "div": ["class"],
+    "pre": ["class"],
+    "span": ["class"],
+    "td": ["align", "colspan", "rowspan"],
+    "th": ["align", "colspan", "rowspan"],
+}
+_ALLOWED_PROTOCOLS = ["http", "https", "mailto", "zotero", "zotero-digest"]
 
 
 def normalize_plaintext(text: str) -> str:
@@ -71,7 +122,14 @@ def markdown_to_html(md: str) -> str:
     prepared = escape_bare_underscores(
         escape_pipes_in_table_math(ensure_blank_line_before_tables(md))
     )
-    return markdown.markdown(
+    rendered = markdown.markdown(
         prepared,
         extensions=_MD_EXTENSIONS,
+    )
+    return bleach.clean(
+        rendered,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRIBUTES,
+        protocols=_ALLOWED_PROTOCOLS,
+        strip=True,
     )

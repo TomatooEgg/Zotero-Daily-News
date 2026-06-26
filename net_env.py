@@ -33,12 +33,16 @@ def local_httpx_client(**kwargs: Any) -> httpx.Client:
 
 def connect_zotero() -> zotero.Zotero:
     ensure_local_no_proxy()
-    return zotero.Zotero(
+    zot = zotero.Zotero(
         library_id=0,
         library_type="user",
         local=True,
         client=local_httpx_client(),
     )
+    base_url = os.environ.get("ZOTERO_LOCAL_API_BASE_URL")
+    if base_url:
+        zot.endpoint = base_url.rstrip("/")
+    return zot
 
 
 def connect_zotero_web() -> zotero.Zotero:
@@ -52,8 +56,12 @@ def connect_zotero_web() -> zotero.Zotero:
             "未配置 ZOTERO_API_KEY。请打开控制台 → 设置 → Zotero 回推 填写 API Key"
         )
     library_id = creds["library_id"] or resolve_library_id(api_key)
-    return zotero.Zotero(
+    zot = zotero.Zotero(
         library_id=library_id,
         library_type="user",
         api_key=api_key,
     )
+    base_url = os.environ.get("ZOTERO_API_BASE_URL")
+    if base_url:
+        zot.endpoint = base_url.rstrip("/")
+    return zot

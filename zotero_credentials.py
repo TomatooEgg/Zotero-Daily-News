@@ -3,28 +3,18 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 import httpx
 
-from config_manager import SCRIPT_DIR
+from config_manager import ENV_PATH
+from env_store import parse_env_file, set_env_values
 
-ENV_PATH = SCRIPT_DIR / ".env"
 ENV_KEYS = ("ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID")
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    result: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        result[key.strip()] = value.strip().strip('"').strip("'")
-    return result
+    return parse_env_file(path)
 
 
 def _apply_dotenv() -> None:
@@ -61,22 +51,6 @@ def zotero_config_for_ui() -> dict:
     }
 
 
-def _set_env_line(lines: list[str], key: str, value: str | None) -> list[str]:
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    out: list[str] = []
-    found = False
-    for line in lines:
-        if pattern.match(line):
-            found = True
-            if value:
-                out.append(f"{key}={value}")
-            continue
-        out.append(line)
-    if not found and value:
-        out.append(f"{key}={value}")
-    return out
-
-
 def save_zotero_credentials(
     *,
     api_key: str | None = None,
@@ -91,33 +65,18 @@ def save_zotero_credentials(
 
     new_lib = current["library_id"] if library_id is None else str(library_id).strip()
 
-    lines: list[str] = []
-    if ENV_PATH.exists():
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
-    elif not ENV_PATH.parent.exists():
-        ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    lines = _set_env_line(lines, "ZOTERO_API_KEY", new_key or None)
-    lines = _set_env_line(lines, "ZOTERO_LIBRARY_ID", new_lib or None)
-
-    text = "\n".join(lines).rstrip()
-    if text:
-        text += "\n"
-    ENV_PATH.write_text(text, encoding="utf-8")
-
-    if new_key:
-        os.environ["ZOTERO_API_KEY"] = new_key
-    if new_lib:
-        os.environ["ZOTERO_LIBRARY_ID"] = new_lib
-    elif "ZOTERO_LIBRARY_ID" in os.environ:
-        os.environ.pop("ZOTERO_LIBRARY_ID", None)
+    set_env_values({
+        "ZOTERO_API_KEY": new_key or None,
+        "ZOTERO_LIBRARY_ID": new_lib or None,
+    })
 
     return {"api_key": new_key, "library_id": new_lib}
 
 
 def resolve_library_id(api_key: str) -> str:
+    base_url = os.environ.get("ZOTERO_API_BASE_URL", "https://api.zotero.org").rstrip("/")
     resp = httpx.get(
-        f"https://api.zotero.org/keys/{api_key}",
+        f"{base_url}/keys/{api_key}",
         timeout=30.0,
         follow_redirects=True,
     )

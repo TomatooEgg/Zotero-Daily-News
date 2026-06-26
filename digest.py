@@ -15,12 +15,15 @@ from pathlib import Path
 from openai import OpenAI
 
 from config_manager import (
+    ENV_PATH,
     SCRIPT_DIR,
     build_summary_prompt,
     deepseek_briefing_model,
     load_config,
     resolve_output_dirs,
+    runtime_path,
 )
+from env_store import parse_env_file
 from net_env import connect_zotero
 from notifier import diagnose as notify_diagnose
 from notifier import emit_notify_payload, notify_macos, SUMMARY_ACTION
@@ -29,17 +32,10 @@ from pending_publish import mark_pending
 from summary_io import clean_terms, ensure_hub_path, parse_llm_summary, write_outputs
 from zotero_links import get_pdf_attachment
 
-HISTORY_PATH = SCRIPT_DIR / "history.json"
-ENV_PATH = SCRIPT_DIR / ".env"
+HISTORY_PATH = runtime_path("history.json")
 def load_dotenv(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    for key, value in parse_env_file(path).items():
+        os.environ.setdefault(key, value)
 
 
 def load_history() -> dict:
@@ -50,6 +46,7 @@ def load_history() -> dict:
 
 
 def save_history(history: dict) -> None:
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY_PATH.open("w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 

@@ -7,7 +7,7 @@ import plistlib
 import subprocess
 from pathlib import Path
 
-from config_manager import SCRIPT_DIR, load_config
+from config_manager import SCRIPT_DIR, load_config, logs_dir, runtime_path
 from net_env import LOCAL_NO_PROXY
 from queue_manager import queue_settings
 
@@ -17,8 +17,8 @@ PLIST_NAME = f"{PLIST_LABEL}.plist"
 PLIST_PREPARE_NAME = f"{PLIST_PREPARE_LABEL}.plist"
 PLIST_DST = Path.home() / "Library" / "LaunchAgents" / PLIST_NAME
 PLIST_PREPARE_DST = Path.home() / "Library" / "LaunchAgents" / PLIST_PREPARE_NAME
-PLIST_SRC = SCRIPT_DIR / PLIST_NAME
-PLIST_PREPARE_SRC = SCRIPT_DIR / PLIST_PREPARE_NAME
+PLIST_SRC = runtime_path(PLIST_NAME)
+PLIST_PREPARE_SRC = runtime_path(PLIST_PREPARE_NAME)
 
 
 def _env_block() -> dict[str, str]:
@@ -64,8 +64,8 @@ def build_plist(config: dict | None = None) -> dict:
         "WorkingDirectory": project,
         "EnvironmentVariables": _env_block(),
         "StartCalendarInterval": _schedule_intervals(config),
-        "StandardOutPath": f"{project}/logs/stdout.log",
-        "StandardErrorPath": f"{project}/logs/stderr.log",
+        "StandardOutPath": str(logs_dir() / "stdout.log"),
+        "StandardErrorPath": str(logs_dir() / "stderr.log"),
     }
 
 
@@ -78,14 +78,14 @@ def build_prepare_plist(config: dict | None = None) -> dict:
         "WorkingDirectory": project,
         "EnvironmentVariables": _env_block(),
         "StartCalendarInterval": _prepare_intervals(config),
-        "StandardOutPath": f"{project}/logs/prepare_stdout.log",
-        "StandardErrorPath": f"{project}/logs/prepare_stderr.log",
+        "StandardOutPath": str(logs_dir() / "prepare_stdout.log"),
+        "StandardErrorPath": str(logs_dir() / "prepare_stderr.log"),
     }
 
 
 def write_plist(config: dict | None = None) -> Path:
     config = config or load_config()
-    (SCRIPT_DIR / "logs").mkdir(parents=True, exist_ok=True)
+    logs_dir().mkdir(parents=True, exist_ok=True)
     for src, dst, builder in (
         (PLIST_SRC, PLIST_DST, build_plist),
         (PLIST_PREPARE_SRC, PLIST_PREPARE_DST, build_prepare_plist),

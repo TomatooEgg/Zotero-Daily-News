@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from config_manager import load_config
 from net_env import ensure_local_no_proxy
+from platform_utils import is_macos, open_target
 
 DEEPLINK_SCHEME = "zotero-digest"
 
@@ -59,7 +60,7 @@ def open_notify_target(note_id: str, hub_path: Path | None = None) -> None:
     if note_id and navigate_to_note_in_app(note_id, activate=True):
         return
     if hub_path and hub_path.exists():
-        subprocess.run(["open", str(hub_path.resolve())], check=False)
+        open_target(hub_path.resolve())
 
 
 def parse_deeplink(url: str) -> str | None:
@@ -101,7 +102,10 @@ def open_digest_app_for_note(note_id: str) -> bool:
         return False
     if navigate_to_note_in_app(note_id, activate=True):
         return True
-    subprocess.run(["open", deeplink_for_note(note_id, activate=True)], check=False)
+    if is_macos():
+        subprocess.run(["open", deeplink_for_note(note_id, activate=True)], check=False)
+    else:
+        open_target(f"{digest_app_base_url()}{note_path(note_id)}")
     return True
 
 

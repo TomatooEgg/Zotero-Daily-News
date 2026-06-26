@@ -171,12 +171,12 @@ def main() -> None:
         )
         state["window"] = window
         webview.start(on_gui_ready)
-    except ImportError:
+    except Exception as exc:
         import webbrowser
 
         webbrowser.open(f"{base_url}{initial_path}")
         print(f"已打开浏览器: {base_url}{initial_path}")
-        print("安装 pywebview 可获得原生窗口: pip install pywebview")
+        print(f"原生窗口不可用，已回退到浏览器: {exc}", file=sys.stderr)
         try:
             while True:
                 time.sleep(3600)
