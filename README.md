@@ -160,9 +160,21 @@ Outputs:
 - `dist\Zotero-Daily-News-Windows-x86_64.msi`
 - `dist\Zotero-Daily-News-Windows-x86_64-Portable.zip`
 
+## Build macOS Artifacts
+
+Run on macOS:
+
+```bash
+bash build_dmg.sh
+```
+
+Output:
+
+- `dist/Zotero-Daily-News-macOS-<arch>.dmg`
+
 ## CI
 
-GitHub Actions runs tests on Windows and macOS for pull requests and pushes. A manual workflow or tag build also produces the Windows MSI and portable ZIP.
+GitHub Actions runs tests on Windows and macOS for pull requests and pushes. A manual workflow or tag build also produces the Windows MSI, Windows portable ZIP, and macOS DMG.
 
 ## Security
 

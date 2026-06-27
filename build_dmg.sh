@@ -5,17 +5,19 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Zotero 简报.app"
 LINK_APP_NAME="Zotero Digest Link.app"
+ARCH="${ZOTERO_DAILY_NEWS_MAC_ARCH:-$(uname -m)}"
 STAGE="$PROJECT_DIR/dist/stage"
 APP_DIR="$STAGE/$APP_NAME"
 LINK_DIR="$STAGE/$LINK_APP_NAME"
 BUNDLE_APP="$APP_DIR/Contents/Resources/app"
-DMG_NAME="Zotero-Digest.dmg"
+DMG_NAME="Zotero-Daily-News-macOS-${ARCH}.dmg"
 DMG_PATH="$PROJECT_DIR/dist/$DMG_NAME"
 
 echo "==> 清理并创建 staging"
 rm -rf "$STAGE"
 mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
   "$LINK_DIR/Contents/MacOS" "$LINK_DIR/Contents/Resources"
+ln -s /Applications "$STAGE/Applications"
 
 echo "==> 复制项目文件"
 rsync -a \
