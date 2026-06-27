@@ -395,7 +395,11 @@ def push_from_queue(
 
     if settings["pre_generate_deep_read"]:
         for entry in candidates:
-            if entry.get("has_pdf") and entry.get("note_id") and entry.get("deep_read") != DEEP_READY:
+            if (
+                entry.get("has_pdf")
+                and entry.get("note_id")
+                and entry.get("deep_read", DEEP_PENDING) == DEEP_PENDING
+            ):
                 _prepare_deep_read_only(entry, config)
         save_queue(queue)
 

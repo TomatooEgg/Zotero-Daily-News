@@ -35,7 +35,7 @@ from .zotero_links import get_pdf_attachment
 HISTORY_PATH = runtime_path("history.json")
 def load_dotenv(path: Path) -> None:
     for key, value in parse_env_file(path).items():
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 def load_history() -> dict:

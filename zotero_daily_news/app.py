@@ -102,7 +102,7 @@ def load_env() -> dict[str, str]:
 
 
 def deepseek_config_for_ui() -> dict:
-    env = {**load_env(), **os.environ}
+    env = {**os.environ, **load_env()}
     key = (env.get("DEEPSEEK_API_KEY") or "").strip()
     cfg = load_config()
     return {
@@ -446,7 +446,7 @@ def api_save_deepseek_config():
 
 @app.post("/api/deepseek-config/test")
 def api_test_deepseek_config():
-    env = {**load_env(), **os.environ}
+    env = {**os.environ, **load_env()}
     api_key = (env.get("DEEPSEEK_API_KEY") or "").strip()
     if not api_key:
         return jsonify({"ok": False, "message": "未配置 DeepSeek API Key"}), 400

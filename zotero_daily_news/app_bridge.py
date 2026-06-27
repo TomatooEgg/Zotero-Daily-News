@@ -27,4 +27,4 @@ def navigate_to_note(note_id: str, *, activate: bool = True) -> bool:
     """在原生窗口内打开笔记；仅 pywebview 已注册时返回 True。"""
     if not note_id or not _navigate_to_note:
         return False
-    return bool(_navigate_to_note(note_id, activate))
+    return bool(_navigate_to_note(note_id, activate=activate))

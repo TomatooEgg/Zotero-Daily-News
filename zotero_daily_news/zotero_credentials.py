@@ -19,7 +19,7 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 def _apply_dotenv() -> None:
     for key, value in _parse_env_file(ENV_PATH).items():
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 def mask_api_key(key: str) -> str:
