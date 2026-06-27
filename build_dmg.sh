@@ -13,13 +13,13 @@ BUNDLE_APP="$APP_DIR/Contents/Resources/app"
 DMG_NAME="Zotero-Daily-News-macOS-${ARCH}.dmg"
 DMG_PATH="$PROJECT_DIR/dist/$DMG_NAME"
 
-echo "==> 清理并创建 staging"
+echo "==> Preparing staging directory"
 rm -rf "$STAGE"
 mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
   "$LINK_DIR/Contents/MacOS" "$LINK_DIR/Contents/Resources"
 ln -s /Applications "$STAGE/Applications"
 
-echo "==> 复制项目文件"
+echo "==> Copying project files"
 rsync -a \
   --exclude '.git/' \
   --exclude '.venv/' \
@@ -42,7 +42,7 @@ rsync -a \
 
 mkdir -p "$BUNDLE_APP/summaries" "$BUNDLE_APP/hubs" "$BUNDLE_APP/logs" "$BUNDLE_APP/bin"
 
-echo "==> 创建虚拟环境并安装依赖"
+echo "==> Creating virtual environment and installing dependencies"
 python3 -m venv "$BUNDLE_APP/.venv"
 "$BUNDLE_APP/.venv/bin/pip" install --upgrade pip -q
 "$BUNDLE_APP/.venv/bin/pip" install -r "$BUNDLE_APP/requirements.txt" -q
@@ -53,7 +53,7 @@ install_binary() {
   if [[ -x "$PROJECT_DIR/bin/$name" ]]; then
     cp "$PROJECT_DIR/bin/$name" "$dest"
     chmod +x "$dest"
-    echo "    $name ← 项目 bin/"
+    echo "    ${name} -> project bin/"
     return
   fi
   if command -v "$name" &>/dev/null; then
@@ -66,13 +66,13 @@ install_binary() {
     fi
     cp "$src" "$dest"
     chmod +x "$dest"
-    echo "    $name ← $src"
+    echo "    ${name} -> ${src}"
     return
   fi
-  echo "    警告: 未找到 $name，通知功能可能受限"
+  echo "    warning: ${name} not found; notification support may be limited"
 }
 
-echo "==> 复制通知工具"
+echo "==> Copying notification helpers"
 install_binary terminal-notifier
 install_binary alerter
 
@@ -202,7 +202,7 @@ if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$LINK_DIR" 2>/dev/null || true
 fi
 
-echo "==> 生成 DMG"
+echo "==> Creating DMG"
 hdiutil create \
   -volname "Zotero 简报" \
   -srcfolder "$STAGE" \
@@ -211,11 +211,11 @@ hdiutil create \
   "$DMG_PATH"
 
 echo ""
-echo "完成！"
+echo "Done."
 echo "  DMG: $DMG_PATH"
-echo "  大小: $(du -h "$DMG_PATH" | cut -f1)"
+echo "  Size: $(du -h "$DMG_PATH" | cut -f1)"
 echo ""
-echo "使用方式："
-echo "  1. 打开 DMG，将「Zotero 简报.app」拖到「应用程序」"
-echo "  2. 首次启动后按向导填写 DeepSeek Key、Zotero 写入 Key 和模型名"
-echo "  3. 验证通过后，向导会启用定时推送任务"
+echo "Usage:"
+echo "  1. Open the DMG and drag Zotero 简报.app to Applications."
+echo "  2. On first launch, complete the setup wizard."
+echo "  3. Scheduled delivery is enabled only after validation succeeds."
