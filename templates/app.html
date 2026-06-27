@@ -402,6 +402,11 @@
       if (tab) tab.click();
     }
 
+    function showActionsTab() {
+      const tab = document.querySelector('.tab[data-panel="actions"]');
+      if (tab) tab.click();
+    }
+
     function toast(msg) {
       const el = document.getElementById('toast');
       el.textContent = msg;
@@ -1030,22 +1035,37 @@
     }
 
     async function runNow(force) {
+      showActionsTab();
+      const buttons = document.querySelectorAll('button[onclick^="runNow("]');
+      buttons.forEach((btn) => btn.disabled = true);
+      const stdoutEl = document.getElementById('stdout_log');
+      const stderrEl = document.getElementById('stderr_log');
+      stdoutEl.textContent = force ? '强制推送中…' : '推送中…';
+      stderrEl.textContent = '';
       toast(force ? '强制推送中…' : '推送中…');
-      const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ force }) });
-      const data = await res.json();
-      if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
-      if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
-      let msg = data.ok ? '推送完成' : '推送失败';
-      if (!data.ok && data.stderr) {
-        const hint = data.stderr.split('\n').find((l) => l.includes('就绪') || l.includes('预生成') || l.includes('清单'));
-        if (hint) msg = hint;
+      try {
+        const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ force }) });
+        const data = await res.json();
+        stdoutEl.textContent = data.stdout || '';
+        stderrEl.textContent = data.stderr || '';
+        let msg = data.ok ? '推送完成' : '推送失败';
+        if (!data.ok && data.stderr) {
+          const hint = data.stderr.split('\n').find((l) => l.includes('就绪') || l.includes('预生成') || l.includes('清单') || l.includes('No module named'));
+          if (hint) msg = hint;
+        }
+        if (data.ok && data.notifications_failed > 0) {
+          msg = '推送完成，但部分通知未弹出，请查看日志';
+        }
+        toast(msg);
+        if (data.ok) { loadNotes(); loadQueue(); }
+      } catch (err) {
+        const msg = err.message || '推送请求失败';
+        stderrEl.textContent = msg;
+        toast(msg);
+      } finally {
+        buttons.forEach((btn) => btn.disabled = false);
+        refreshStatus({ updateLogs: false });
       }
-      if (data.ok && data.notifications_failed > 0) {
-        msg = '推送完成，但部分通知未弹出，请查看日志';
-      }
-      toast(msg);
-      if (data.ok) { loadNotes(); loadQueue(); }
-      refreshStatus();
     }
 
     function statusBadge(label, kind) {
@@ -1116,11 +1136,13 @@
       loadNotes();
     }
 
-    async function refreshStatus() {
+    async function refreshStatus(options = {}) {
       const res = await fetch('/api/status');
       const data = await res.json();
-      document.getElementById('stdout_log').textContent = data.stdout;
-      document.getElementById('stderr_log').textContent = data.stderr;
+      if (options.updateLogs !== false) {
+        document.getElementById('stdout_log').textContent = data.stdout;
+        document.getElementById('stderr_log').textContent = data.stderr;
+      }
       const prep = document.getElementById('prepare_launchd_status');
       if (prep && data.launchd) {
         const ld = data.launchd;

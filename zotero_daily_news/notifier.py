@@ -116,7 +116,7 @@ def emit_notify_payload(
         payload["note_id"] = note_id
     if item_key:
         payload["item_key"] = item_key
-    return NOTIFY_PREFIX + json.dumps(payload, ensure_ascii=False)
+    return NOTIFY_PREFIX + json.dumps(payload, ensure_ascii=True)
 
 
 def parse_notify_stdout(stdout: str) -> list[dict[str, str]]:

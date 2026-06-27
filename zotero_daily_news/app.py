@@ -21,7 +21,7 @@ from .deep_read import generate_deep_read
 from .env_store import parse_env_file, set_env_values
 from .notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from .note_view import prepare_note_view_context, render_note_view_html
-from .notifier import notify_macos, parse_notify_stdout
+from .notifier import NOTIFY_PREFIX, notify_macos, parse_notify_stdout
 from .platform_utils import no_window_subprocess_kwargs, open_target, reveal_path
 from .push_finalize import apply_push_results
 from .scheduler import reload_scheduler, scheduler_status
@@ -162,6 +162,20 @@ def python_module_cmd(module: str, *module_args: str) -> list[str]:
     if is_apple_silicon():
         return ["arch", "-arm64", *cmd]
     return cmd
+
+
+def python_subprocess_env() -> dict[str, str]:
+    env = {**os.environ, **load_env()}
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    return env
+
+
+def display_subprocess_stdout(stdout: str) -> str:
+    return "\n".join(
+        line for line in stdout.splitlines()
+        if not line.startswith(NOTIFY_PREFIX)
+    )
 
 
 def dispatch_notifications(specs: list[dict[str, str]]) -> tuple[int, int, str, list[dict]]:
@@ -639,7 +653,9 @@ def api_run():
         cwd=str(SCRIPT_DIR),
         capture_output=True,
         text=True,
-        env={**os.environ, **load_env()},
+        encoding="utf-8",
+        errors="replace",
+        env=python_subprocess_env(),
         **no_window_subprocess_kwargs(),
     )
     specs = parse_notify_stdout(result.stdout)
@@ -650,7 +666,7 @@ def api_run():
     )
     return jsonify({
         "ok": result.returncode == 0,
-        "stdout": result.stdout,
+        "stdout": display_subprocess_stdout(result.stdout),
         "stderr": combined_stderr,
         "returncode": result.returncode,
         "notifications_sent": sent,

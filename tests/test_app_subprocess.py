@@ -36,3 +36,24 @@ def test_python_module_cmd_uses_module_in_source(monkeypatch):
     cmd = app.python_module_cmd("zotero_daily_news.digest", "--push-queue")
 
     assert cmd == ["python", "-m", "zotero_daily_news.digest", "--push-queue"]
+
+
+def test_python_subprocess_env_forces_utf8(monkeypatch):
+    from zotero_daily_news import app
+
+    monkeypatch.setattr(app, "load_env", lambda: {})
+    monkeypatch.delenv("PYTHONIOENCODING", raising=False)
+    monkeypatch.delenv("PYTHONUTF8", raising=False)
+
+    env = app.python_subprocess_env()
+
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    assert env["PYTHONUTF8"] == "1"
+
+
+def test_display_subprocess_stdout_hides_notify_protocol():
+    from zotero_daily_news import app
+
+    stdout = '@@NOTIFY@@{"title":"x"}\n待确认: 中文标题\n'
+
+    assert app.display_subprocess_stdout(stdout) == "待确认: 中文标题"

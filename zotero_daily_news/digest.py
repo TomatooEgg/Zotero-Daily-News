@@ -448,9 +448,9 @@ def main() -> None:
     if args.test_notify:
         sys.exit(test_notification(verbose=args.verbose_notify))
     if args.prepare_queue:
-        from .queue_manager import prepare_queue, refresh_queue
+        from .queue_manager import load_queue, prepare_queue, refresh_queue
 
-        if args.refresh_queue or args.force or not __import__("queue_manager").load_queue():
+        if args.refresh_queue or args.force or not load_queue():
             refresh_queue(force=args.force)
         prepare_queue(skip_llm=args.metadata_only)
         sys.exit(0)
@@ -461,7 +461,7 @@ def main() -> None:
         print("待推清单已刷新")
         sys.exit(0)
     if args.push_queue:
-        from .queue_manager import prepare_queue, push_from_queue, refresh_queue
+        from .queue_manager import load_queue, prepare_queue, push_from_queue, refresh_queue
 
         if args.force:
             sys.exit(
@@ -472,7 +472,7 @@ def main() -> None:
                     no_notify=args.no_notify,
                 )
             )
-        if not __import__("queue_manager").load_queue():
+        if not load_queue():
             refresh_queue()
             prepare_queue(skip_llm=args.metadata_only)
         sys.exit(

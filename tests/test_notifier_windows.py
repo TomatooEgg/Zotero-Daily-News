@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 
 
 def test_windows_toast_uses_protocol_activation(monkeypatch, tmp_path):
@@ -66,3 +67,19 @@ def test_windows_toast_reports_failure(monkeypatch):
     monkeypatch.setattr(notifier, "_register_windows_protocol_handler", lambda: None)
 
     assert not notifier._notify_windows_toast("Title", "Body", "", False, note_id="NEWS")
+
+
+def test_notify_payload_is_ascii_safe_for_windows_stdout(tmp_path):
+    from zotero_daily_news import notifier
+
+    payload = notifier.emit_notify_payload(
+        title="📚 今日文献",
+        message="中文摘要",
+        hub_path=tmp_path / "news.html",
+        note_id="NOTE",
+    )
+
+    payload.encode("ascii")
+    data = json.loads(payload[len(notifier.NOTIFY_PREFIX) :])
+    assert data["title"] == "📚 今日文献"
+    assert data["message"] == "中文摘要"
