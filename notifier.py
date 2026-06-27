@@ -280,39 +280,91 @@ def _notify_osascript(title: str, message: str, subtitle: str, verbose: bool) ->
     return result.returncode == 0 and not broken
 
 
-def _notify_windows_toast(title: str, message: str, subtitle: str, verbose: bool) -> bool:
+def _windows_toast_target(note_id: str | None, hub_path: Path | None) -> str:
+    if hub_path and hub_path.exists():
+        return str(hub_path.resolve())
+    resolved = _resolve_note_id(note_id, hub_path)
+    if resolved:
+        try:
+            from url_handler import digest_app_base_url, note_path
+
+            return f"{digest_app_base_url()}{note_path(resolved)}"
+        except Exception:
+            pass
+    return ""
+
+
+def _notify_windows_toast(
+    title: str,
+    message: str,
+    subtitle: str,
+    verbose: bool,
+    *,
+    note_id: str | None = None,
+    hub_path: Path | None = None,
+) -> bool:
     script = r"""
 $ErrorActionPreference = "Stop"
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
-$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02
-$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template)
+$xmlText = @"
+<toast launch="open">
+  <visual>
+    <binding template="ToastGeneric">
+      <text></text>
+      <text></text>
+      <text></text>
+    </binding>
+  </visual>
+  <actions>
+    <action content="打开简报" arguments="open" activationType="foreground"/>
+  </actions>
+</toast>
+"@
+$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+$xml.LoadXml($xmlText)
 $texts = $xml.GetElementsByTagName("text")
 $texts.Item(0).AppendChild($xml.CreateTextNode($env:ZDN_TOAST_TITLE)) > $null
-$body = $env:ZDN_TOAST_MESSAGE
-if ($env:ZDN_TOAST_SUBTITLE) { $body = "$($env:ZDN_TOAST_SUBTITLE)`n$body" }
-$texts.Item(1).AppendChild($xml.CreateTextNode($body)) > $null
+$texts.Item(1).AppendChild($xml.CreateTextNode($env:ZDN_TOAST_SUBTITLE)) > $null
+$texts.Item(2).AppendChild($xml.CreateTextNode($env:ZDN_TOAST_MESSAGE)) > $null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$script:done = $false
+$toast.add_Activated({
+  if ($env:ZDN_TOAST_TARGET) { Start-Process $env:ZDN_TOAST_TARGET }
+  $script:done = $true
+})
+$toast.add_Failed({ $script:done = $true })
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Zotero Daily News").Show($toast)
+$deadline = (Get-Date).AddSeconds([int]$env:ZDN_TOAST_WAIT_SECONDS)
+while (-not $script:done -and (Get-Date) -lt $deadline) {
+  Start-Sleep -Milliseconds 250
+}
 """
     env = {
         **os.environ,
         "ZDN_TOAST_TITLE": title[:120],
         "ZDN_TOAST_SUBTITLE": subtitle[:120],
-        "ZDN_TOAST_MESSAGE": message[:240],
+        "ZDN_TOAST_MESSAGE": message[:360],
+        "ZDN_TOAST_TARGET": _windows_toast_target(note_id, hub_path),
+        "ZDN_TOAST_WAIT_SECONDS": os.environ.get("ZDN_TOAST_WAIT_SECONDS", "180"),
     }
-    result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-        capture_output=True,
-        text=True,
-        env=env,
-        **no_window_subprocess_kwargs(),
-    )
+    try:
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            **no_window_subprocess_kwargs(),
+        )
+    except OSError as exc:
+        if verbose:
+            print(f"[windows-toast] failed to start: {exc}", file=sys.stderr)
+        return False
     if verbose:
-        print(f"[windows-toast] exit={result.returncode}", file=sys.stderr)
-        if result.stderr.strip():
-            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
-    return result.returncode == 0
+        target = env.get("ZDN_TOAST_TARGET") or "(none)"
+        print(f"[windows-toast] started target={target}", file=sys.stderr)
+    return True
 
 
 def _fallback_alert(hub_path: Path | None, verbose: bool, *, note_id: str | None = None) -> None:
@@ -360,7 +412,14 @@ def notify_macos(
         return True, SUMMARY_ACTION
 
     if not is_macos():
-        if is_windows() and _notify_windows_toast(title, message, subtitle, verbose):
+        if is_windows() and _notify_windows_toast(
+            title,
+            message,
+            subtitle,
+            verbose,
+            note_id=resolved_note_id,
+            hub_path=hub_path,
+        ):
             return True, IMMEDIATE_PUBLISH_ACTION
         if hub_path and hub_path.exists():
             open_target(hub_path.resolve())

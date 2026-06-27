@@ -29,6 +29,7 @@ class NoteEntry:
     md_path: str
     hub_path: str | None
     mtime: float
+    pending: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -41,6 +42,7 @@ class NoteEntry:
             "md_path": self.md_path,
             "hub_path": self.hub_path,
             "mtime": self.mtime,
+            "pending": self.pending,
         }
 
 
@@ -86,7 +88,8 @@ def list_notes(date_filter: str | None = None, *, include_pending: bool = False)
         if date_filter and iso_date != date_filter:
             continue
         stem = md_path.stem
-        if not include_pending and is_pending(stem):
+        pending = is_pending(stem)
+        if not include_pending and pending:
             continue
         title, briefing = _read_meta(md_path)
         hub = _find_hub(hubs_dir, stem)
@@ -102,6 +105,7 @@ def list_notes(date_filter: str | None = None, *, include_pending: bool = False)
                 md_path=str(md_path.resolve()),
                 hub_path=str(hub.resolve()) if hub else None,
                 mtime=stat.st_mtime,
+                pending=pending,
             )
         )
     return entries
@@ -157,7 +161,7 @@ def _delete_files(entry: NoteEntry) -> None:
 def _sync_history_after_delete(deleted_item_keys: list[str]) -> None:
     if not deleted_item_keys or not HISTORY_PATH.exists():
         return
-    remaining_keys = {e.item_key for e in list_notes()}
+    remaining_keys = {e.item_key for e in list_notes(include_pending=True)}
     with HISTORY_PATH.open(encoding="utf-8") as f:
         history = json.load(f)
     items = history.setdefault("items", {})
@@ -200,7 +204,7 @@ def delete_notes_by_date(iso_date: str) -> int:
         datetime.strptime(iso_date, "%Y-%m-%d")
     except ValueError:
         return -1
-    entries = list_notes(date_filter=iso_date)
+    entries = list_notes(date_filter=iso_date, include_pending=True)
     if not entries:
         return 0
     return delete_notes([e.id for e in entries])

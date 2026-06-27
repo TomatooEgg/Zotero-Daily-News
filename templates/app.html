@@ -71,7 +71,9 @@
     .note-star { filter: grayscale(1); opacity: 0.45; }
     .note-star.active { filter: none; opacity: 1; }
     .note-card.starred .note-star { filter: none; opacity: 1; }
+    .note-title-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
     .note-card h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
+    .note-title-row h3 { margin: 0; }
     .note-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .note-detail { flex: 1; min-width: 240px; overflow-y: auto; padding: 0; background: #fff; display: flex; flex-direction: column; }
     .note-detail.empty { display: flex; align-items: center; justify-content: center; color: var(--muted); padding: 24px; }
@@ -120,6 +122,8 @@
     .queue-table th, .queue-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
     .queue-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
     .queue-table tr.push-slot { background: #f0f7ff; }
+    .queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .queue-actions button { padding: 5px 8px; font-size: 12px; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
     .badge.pending { background: #f2f2f7; color: var(--muted); }
     .badge.ready { background: #d1fae5; color: #065f46; }
@@ -201,10 +205,12 @@
               <label>Markdown 总结路径</label>
               <input id="summaries_dir" value="{{ config.summaries_dir }}">
               <div class="hint">相对项目目录或绝对路径</div>
+              <div class="hint">当前实际目录：{{ config.summaries_dir_resolved }}</div>
             </div>
             <div>
               <label>HTML 中转页路径</label>
               <input id="hubs_dir" value="{{ config.hubs_dir }}">
+              <div class="hint">当前实际目录：{{ config.hubs_dir_resolved }}</div>
             </div>
           </div>
         </div>
@@ -250,7 +256,10 @@
         <div class="card">
           <h2>发送时间</h2>
           <div id="schedule_list" class="schedule-list"></div>
-          <div class="actions"><button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button></div>
+          <div class="actions">
+            <button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button>
+            <button class="btn-primary" onclick="reloadSchedule()">保存并重载定时任务</button>
+          </div>
         </div>
         <div class="card">
           <h2>头条简报 Prompt</h2>
@@ -280,7 +289,7 @@
         <div class="card">
           <div class="actions">
             <button class="btn-primary" onclick="saveConfig()">保存配置</button>
-            <button class="btn-secondary" onclick="reloadSchedule()">重载定时任务</button>
+            <button class="btn-secondary" onclick="reloadSchedule()">保存并重载定时任务</button>
           </div>
         </div>
       </div>
@@ -293,8 +302,8 @@
           <h2>待推清单</h2>
           <p class="hint" id="queue_meta">加载中…</p>
           <div class="actions" style="margin-bottom:12px">
-            <button class="btn-secondary" onclick="refreshQueue(false)">随机刷新清单</button>
-            <button class="btn-secondary" onclick="prepareQueue()">预生成（前 N 篇）</button>
+            <button class="btn-secondary" onclick="refreshQueue(false)">生成待推清单</button>
+            <button class="btn-secondary" onclick="prepareQueue()">生成 News（前 N 篇）</button>
             <button class="btn-ghost" onclick="refreshQueue(true)">强制刷新</button>
           </div>
           <div id="queue_list"></div>
@@ -627,13 +636,14 @@
       }
       el.innerHTML = notes.map(n => {
         const starred = starredIds.has(n.id);
+        const pendingBadge = n.pending ? statusBadge('待推送', 'pending') : '';
         return `
         <div class="note-card${selectedNoteId === n.id && !selectionMode ? ' active' : ''}${selectedIds.has(n.id) ? ' selected' : ''}${starred ? ' starred' : ''}"
              onclick="handleNoteCardClick('${n.id}')">
           ${selectionMode ? `<input type="checkbox" class="note-check" ${selectedIds.has(n.id) ? 'checked' : ''}
             onclick="event.stopPropagation(); toggleNoteSelection('${n.id}', this.checked)">` : ''}
           <div class="note-body">
-            <h3>${esc(n.title)}</h3>
+            <div class="note-title-row"><h3>${esc(n.title)}</h3>${pendingBadge}</div>
             <p>${esc(n.briefing || '（无简报）')}</p>
           </div>
           ${!selectionMode ? `
@@ -801,6 +811,21 @@
     function addSchedule() { initialSchedule.push({ hour: 9, minute: 0 }); renderSchedule(); }
     function removeSchedule(i) { initialSchedule.splice(i, 1); renderSchedule(); }
 
+    function collectSchedule() {
+      const rows = document.querySelectorAll('#schedule_list .schedule-item');
+      const schedule = [];
+      rows.forEach(row => {
+        const hourInput = row.querySelector('input[data-f="hour"]');
+        const minuteInput = row.querySelector('input[data-f="minute"]');
+        if (!hourInput || !minuteInput) return;
+        const hour = Math.max(0, Math.min(23, parseInt(hourInput.value, 10)));
+        const minute = Math.max(0, Math.min(59, parseInt(minuteInput.value, 10)));
+        if (Number.isFinite(hour) && Number.isFinite(minute)) schedule.push({ hour, minute });
+      });
+      initialSchedule.splice(0, initialSchedule.length, ...schedule);
+      return schedule;
+    }
+
     function gatherConfig() {
       const count = +document.getElementById('count').value;
       let queueSize = +document.getElementById('queue_size').value;
@@ -814,7 +839,7 @@
         pre_generate_deep_read: document.getElementById('pre_generate_deep_read').checked,
         summaries_dir: document.getElementById('summaries_dir').value,
         hubs_dir: document.getElementById('hubs_dir').value,
-        schedule: initialSchedule,
+        schedule: collectSchedule(),
         summary_prompt: document.getElementById('summary_prompt').value,
         pdf_summary_enabled: document.getElementById('pdf_summary_enabled').checked,
         pdf_summary_max_chars: +document.getElementById('pdf_summary_max_chars').value,
@@ -827,7 +852,12 @@
     async function saveConfig() {
       const res = await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gatherConfig()) });
       const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '保存失败');
+        return false;
+      }
       toast(data.message || '已保存');
+      return true;
     }
 
     async function loadDeepSeekConfig() {
@@ -937,7 +967,8 @@
     }
 
     async function reloadSchedule() {
-      await saveConfig();
+      const saved = await saveConfig();
+      if (!saved) return;
       const res = await fetch('/api/reload-schedule', { method: 'POST' });
       const data = await res.json();
       toast(data.message);
@@ -980,7 +1011,7 @@
         if (data.library_id) document.getElementById('setup_zotero_library_id').value = data.library_id;
 
         setSetupStatus('启用定时任务…');
-        await saveConfig();
+        if (!(await saveConfig())) throw new Error('配置保存失败');
         res = await fetch('/api/reload-schedule', { method: 'POST' });
         data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.message || '定时任务启用失败');
@@ -1039,6 +1070,31 @@
       return statusBadge(label, kind);
     }
 
+    async function openQueueNote(noteId) {
+      if (!noteId) return;
+      await loadNotes();
+      await navigateToNote(noteId);
+    }
+
+    async function revealQueueNote(noteId) {
+      if (!noteId) return;
+      const res = await fetch('/api/notes/' + encodeURIComponent(noteId) + '/reveal', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '定位文件失败');
+        return;
+      }
+      toast('已定位 News 文件');
+    }
+
+    function queueActions(item) {
+      if (!item.note_id) return '<span class="hint">先生成 News</span>';
+      return `<div class="queue-actions">
+        <button class="btn-secondary" onclick="openQueueNote('${item.note_id}')">打开 News</button>
+        <button class="btn-secondary" onclick="revealQueueNote('${item.note_id}')">定位文件</button>
+      </div>`;
+    }
+
     async function loadQueue() {
       const meta = document.getElementById('queue_meta');
       const list = document.getElementById('queue_list');
@@ -1064,7 +1120,7 @@
           nonPushed++;
         }
         list.innerHTML = `<table class="queue-table"><thead><tr>
-          <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th>
+          <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th><th>News</th>
         </tr></thead><tbody>` + data.items.map((item, i) => {
           const inPushSlot = pushWindowKeys.has(item.item_key);
           const slot = inPushSlot ? ' push-slot' : '';
@@ -1075,6 +1131,7 @@
             <td>${queueStatusLabel(item.status)}</td>
             <td>${deepReadLabel(item.deep_read)}</td>
             <td>${pdf}</td>
+            <td>${queueActions(item)}</td>
           </tr>`;
         }).join('') + '</tbody></table>';
       } catch (_) {
@@ -1083,7 +1140,7 @@
     }
 
     async function refreshQueue(force) {
-      toast(force ? '强制刷新清单…' : '随机刷新清单…');
+      toast(force ? '强制生成待推清单…' : '生成待推清单…');
       const res = await fetch('/api/queue/refresh', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1091,17 +1148,17 @@
       });
       const data = await res.json();
       if (!res.ok) { toast(data.error || '刷新失败'); return; }
-      toast(`已刷新 ${data.count} 篇`);
+      toast(`已生成 ${data.count} 篇待推清单；点击「生成 News」写入笔记库`);
       loadQueue();
     }
 
     async function prepareQueue() {
-      toast('预生成中，请稍候…');
+      toast('生成 News 中，请稍候…');
       const res = await fetch('/api/queue/prepare', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
       const data = await res.json();
-      if (!res.ok) { toast(data.error || '预生成失败'); return; }
+      if (!res.ok) { toast(data.error || '生成 News 失败'); return; }
       const n = data.prepared ?? 0;
-      toast(n > 0 ? `预生成完成（${n} 篇）` : '预生成完成，推送位已就绪，无需处理');
+      toast(n > 0 ? `News 已生成（${n} 篇），可在笔记库或清单中打开` : 'News 已就绪，可在笔记库或清单中打开');
       loadQueue();
       loadNotes();
     }

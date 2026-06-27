@@ -9,11 +9,10 @@ from pathlib import Path
 
 from typing import Any
 
-from config_manager import load_config, resolve_output_dirs
+from config_manager import SCRIPT_DIR, load_config, resolve_output_dirs
 from notes_index import get_note
 from summary_io import build_hub_html, ensure_hub_assets
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 FIXTURE_MD = SCRIPT_DIR / "fixtures" / "test_note.md"
 TEST_NOTE_ID = "20990101_TESTNOTE_zotero-digest-test"
 

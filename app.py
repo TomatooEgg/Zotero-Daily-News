@@ -68,6 +68,7 @@ def config_for_ui() -> dict:
     cfg = load_config()
     output = cfg.get("output") or {}
     queue_cfg = cfg.get("queue") or {}
+    summaries_dir, hubs_dir = resolve_output_dirs(cfg)
     return {
         "priority_tag": cfg.get("priority_tag", "want"),
         "count": cfg.get("count", 2),
@@ -77,6 +78,8 @@ def config_for_ui() -> dict:
         "pre_generate_deep_read": bool(queue_cfg.get("pre_generate_deep_read", True)),
         "summaries_dir": output.get("summaries_dir", "summaries"),
         "hubs_dir": output.get("hubs_dir", "hubs"),
+        "summaries_dir_resolved": str(summaries_dir),
+        "hubs_dir_resolved": str(hubs_dir),
         "schedule": cfg.get("schedule") or DEFAULT_CONFIG["schedule"],
         "summary_prompt": cfg.get("summary_prompt", DEFAULT_CONFIG["summary_prompt"]),
         "pdf_summary_enabled": bool((cfg.get("pdf_summary") or {}).get("enabled", True)),
@@ -206,7 +209,8 @@ def index():
 @app.get("/api/notes")
 def api_notes():
     date_filter = request.args.get("date")
-    entries = list_notes(date_filter=date_filter or None)
+    include_pending = request.args.get("include_pending", "1").strip().lower() not in ("0", "false", "no")
+    entries = list_notes(date_filter=date_filter or None, include_pending=include_pending)
     return jsonify({"groups": group_by_date(entries), "total": len(entries)})
 
 
@@ -662,11 +666,19 @@ def api_test_notify():
             verbose=True,
         )
     notify_log = stderr_buf.getvalue().strip()
+    entry = get_note(sample["note_id"])
     return jsonify({
         "ok": ok,
         "note_id": sample["note_id"],
         "title": sample["title"],
-        "stdout": "示例推送已发送（请查看屏幕右上角通知中心）" if ok else "示例推送失败",
+        "hub_path": str(sample["hub_path"]),
+        "md_path": str(entry.md_path) if entry else "",
+        "stdout": (
+            f"示例推送已发送。Test Note: {sample['note_id']}\n"
+            f"Hub: {sample['hub_path']}"
+            if ok
+            else "示例推送失败"
+        ),
         "stderr": notify_log,
         "notifications_sent": 1 if ok else 0,
         "notifications_failed": 0 if ok else 1,
