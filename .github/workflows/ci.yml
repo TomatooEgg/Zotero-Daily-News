@@ -58,6 +58,15 @@ jobs:
           python-version: "3.12"
       - name: Build macOS DMG
         run: bash build_dmg.sh
+      - name: Verify macOS DMG
+        run: |
+          DMG="$(ls dist/Zotero-Daily-News-macOS-*.dmg | head -n 1)"
+          hdiutil verify "$DMG"
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -quiet
+          test -d "$MOUNT_DIR/Zotero 简报.app"
+          test -x "$MOUNT_DIR/Zotero 简报.app/Contents/MacOS/launcher"
+          hdiutil detach "$MOUNT_DIR" -quiet
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
