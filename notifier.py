@@ -17,6 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
 LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
 NOTIFY_PREFIX = "@@NOTIFY@@"
+WINDOWS_TOAST_APP_ID = "Zotero Daily News"
 SUMMARY_ACTION = "查看总结"
 DEFER_ACTION = "下次再推"
 IMMEDIATE_PUBLISH_ACTION = "@IMMEDIATE"
@@ -280,6 +281,42 @@ def _notify_osascript(title: str, message: str, subtitle: str, verbose: bool) ->
     return result.returncode == 0 and not broken
 
 
+def _windows_toast_target(note_id: str | None, hub_path: Path | None) -> str:
+    if note_id:
+        try:
+            _register_windows_protocol_handler()
+            from url_handler import deeplink_for_note
+
+            return deeplink_for_note(note_id, activate=True)
+        except Exception:
+            pass
+    if hub_path and hub_path.exists():
+        return hub_path.resolve().as_uri()
+    return ""
+
+
+def _register_windows_protocol_handler() -> None:
+    if not is_windows():
+        return
+    import winreg
+
+    from url_handler import DEEPLINK_SCHEME
+
+    exe = Path(sys.executable)
+    if getattr(sys, "frozen", False):
+        gui_exe = exe.with_name("Zotero Daily News.exe")
+        command = f'"{gui_exe if gui_exe.exists() else exe}" "%1"'
+    else:
+        command = f'"{exe}" "{SCRIPT_DIR / "zotero_daily.py"}" "%1"'
+
+    base = rf"Software\Classes\{DEEPLINK_SCHEME}"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f"URL:{DEEPLINK_SCHEME}")
+        winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+
+
 def _notify_windows_toast(
     title: str,
     message: str,
@@ -293,38 +330,39 @@ def _notify_windows_toast(
 $ErrorActionPreference = "Stop"
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
-$subtitle = $env:ZDN_TOAST_SUBTITLE
-$message = $env:ZDN_TOAST_MESSAGE
-if ($subtitle) {
-  $message = "$subtitle`n$message"
+$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02
+$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template)
+$root = $xml.GetElementsByTagName("toast").Item(0)
+if ($env:ZDN_TOAST_TARGET) {
+  $root.SetAttribute("activationType", "protocol")
+  $root.SetAttribute("launch", $env:ZDN_TOAST_TARGET)
+  $actions = $xml.CreateElement("actions")
+  $action = $xml.CreateElement("action")
+  $action.SetAttribute("content", "Open News")
+  $action.SetAttribute("activationType", "protocol")
+  $action.SetAttribute("arguments", $env:ZDN_TOAST_TARGET)
+  $actions.AppendChild($action) > $null
+  $root.AppendChild($actions) > $null
 }
-$xmlText = @'
-<toast>
-  <visual>
-    <binding template="ToastGeneric">
-      <text></text>
-      <text></text>
-    </binding>
-  </visual>
-</toast>
-'@
-$xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
-$xml.LoadXml($xmlText)
 $texts = $xml.GetElementsByTagName("text")
 $texts.Item(0).AppendChild($xml.CreateTextNode($env:ZDN_TOAST_TITLE)) > $null
-$texts.Item(1).AppendChild($xml.CreateTextNode($message)) > $null
+$body = $env:ZDN_TOAST_MESSAGE
+if ($env:ZDN_TOAST_SUBTITLE) { $body = "$($env:ZDN_TOAST_SUBTITLE)`n$body" }
+$texts.Item(1).AppendChild($xml.CreateTextNode($body)) > $null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Zotero Daily News").Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:ZDN_TOAST_APP_ID).Show($toast)
 """
     env = {
         **os.environ,
+        "ZDN_TOAST_APP_ID": WINDOWS_TOAST_APP_ID,
         "ZDN_TOAST_TITLE": title[:120],
         "ZDN_TOAST_SUBTITLE": subtitle[:120],
-        "ZDN_TOAST_MESSAGE": message[:360],
+        "ZDN_TOAST_MESSAGE": message[:240],
+        "ZDN_TOAST_TARGET": _windows_toast_target(note_id, hub_path),
     }
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script],
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
             capture_output=True,
             text=True,
             timeout=15,
@@ -336,7 +374,8 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
             print(f"[windows-toast] failed: {exc}", file=sys.stderr)
         return False
     if verbose:
-        print(f"[windows-toast] exit={result.returncode}", file=sys.stderr)
+        target = env.get("ZDN_TOAST_TARGET") or "(none)"
+        print(f"[windows-toast] exit={result.returncode} app_id={WINDOWS_TOAST_APP_ID} target={target}", file=sys.stderr)
         if result.stdout.strip():
             print(f"  stdout: {result.stdout.strip()}", file=sys.stderr)
         if result.stderr.strip():
