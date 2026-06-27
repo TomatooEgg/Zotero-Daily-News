@@ -36,6 +36,32 @@ The app saves the settings, tests DeepSeek and Zotero, then enables scheduled ta
 
 Windows scheduling uses Task Scheduler tasks named `ZoteroDailyNews\Push*` and `ZoteroDailyNews\Prepare*`.
 
+## Required Setup Values
+
+The first-run wizard only needs two real secrets from the user: a DeepSeek API key and a Zotero API key with write permission. Base URL and model fields are prefilled and normally do not need changes.
+
+| Field | Required | How to get it |
+| --- | --- | --- |
+| DeepSeek API key | Yes | Sign in to the DeepSeek Platform, open [API Keys](https://platform.deepseek.com/api_keys), create a new key, and paste it into the wizard. Add balance or quota in DeepSeek if model validation fails because of billing/quota. |
+| DeepSeek base URL | No, prefilled | Keep `https://api.deepseek.com` unless you use a compatible proxy or gateway. |
+| DeepSeek briefing model | No, prefilled | Keep the default model unless your DeepSeek account or gateway requires a different model name. |
+| DeepSeek deep-read model | No, prefilled | Keep the default model unless your DeepSeek account or gateway requires a different model name. |
+| Zotero API key | Yes | Sign in to Zotero, open [API Keys](https://www.zotero.org/settings/keys) or [Security](https://www.zotero.org/settings/security), create a new private key, allow personal library access, and enable write access. This key is used to create/update digest notes under Zotero items. |
+| Zotero library ID | Usually no | Leave blank for a personal Zotero library. The app resolves the numeric user ID from the Zotero API key. If auto-detection fails, copy the numeric user ID shown on the Zotero API Keys page. |
+| Zotero Local API | Required setting, no key | Open Zotero Desktop, then enable `Settings -> Advanced -> Allow other applications on this computer to communicate with Zotero`. Keep Zotero running while the app validates or pushes. |
+
+You can verify the Zotero Local API manually after enabling it:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:23119/api/users/0/items/top?limit=1"
+```
+
+On macOS/Linux:
+
+```bash
+curl "http://127.0.0.1:23119/api/users/0/items/top?limit=1"
+```
+
 ## macOS Quick Start
 
 From source:
