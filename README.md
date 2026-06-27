@@ -36,7 +36,7 @@ The app saves the settings, tests DeepSeek and Zotero, then enables scheduled ta
 
 Windows scheduling uses hidden Task Scheduler tasks named `ZoteroDailyNews\Push*` and `ZoteroDailyNews\Prepare*`. The desktop window can be minimized or closed to the system tray; use the tray menu to reopen or quit the app.
 
-Generated News appears in the **Notes** tab, including pending News that has been generated but not clicked from a notification yet. The **Actions -> Queue** table also shows `Open News` and `Locate File` after a queued item has been generated. On Windows the files are stored under `%LOCALAPPDATA%\Zotero Daily News\summaries` and `%LOCALAPPDATA%\Zotero Daily News\hubs` by default; the Settings page shows the exact resolved paths.
+Generated News appears in the **Notes** tab, including pending News that has been generated but not clicked from a notification yet. The **Push & Logs** tab only shows queue status, push controls, and logs; open generated News from the Notes tab. On Windows the files are stored under `%LOCALAPPDATA%\Zotero Daily News\summaries` and `%LOCALAPPDATA%\Zotero Daily News\hubs` by default; the Settings page shows the exact resolved paths.
 
 The **Test Notification** button creates a local `Test Note` only for notification and deep-link testing. It does not write a fake item into Zotero. To write a generated News item back to Zotero, open the News detail and click **Backfill Zotero**.
 

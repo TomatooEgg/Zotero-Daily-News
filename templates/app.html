@@ -118,12 +118,6 @@
     .schedule-item { display: flex; gap: 8px; align-items: center; }
     .schedule-item input { width: 80px; }
     .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
-    .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .queue-table th, .queue-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    .queue-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
-    .queue-table tr.push-slot { background: #f0f7ff; }
-    .queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .queue-actions button { padding: 5px 8px; font-size: 12px; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
     .badge.pending { background: #f2f2f7; color: var(--muted); }
     .badge.ready { background: #d1fae5; color: #065f46; }
@@ -305,8 +299,8 @@
             <button class="btn-secondary" onclick="refreshQueue(false)">生成待推清单</button>
             <button class="btn-secondary" onclick="prepareQueue()">生成 News（前 N 篇）</button>
             <button class="btn-ghost" onclick="refreshQueue(true)">强制刷新</button>
+            <button class="btn-secondary" onclick="showNotesTab()">打开笔记库</button>
           </div>
-          <div id="queue_list"></div>
         </div>
         <div class="card">
           <h2>状态</h2>
@@ -402,6 +396,11 @@
         if (tab.dataset.panel === 'settings') { loadDeepSeekConfig(); loadZoteroConfig(); }
       });
     });
+
+    function showNotesTab() {
+      const tab = document.querySelector('.tab[data-panel="notes"]');
+      if (tab) tab.click();
+    }
 
     function toast(msg) {
       const el = document.getElementById('toast');
@@ -1053,87 +1052,23 @@
       return `<span class="badge ${kind}">${esc(label)}</span>`;
     }
 
-    function queueStatusLabel(status) {
-      const map = { pending: ['待生成', 'pending'], ready: ['就绪', 'ready'], pushed: ['已推送', 'pushed'], error: ['失败', 'error'] };
-      const [label, kind] = map[status] || [status || '未知', 'pending'];
-      return statusBadge(label, kind);
-    }
-
-    function deepReadLabel(state) {
-      const map = {
-        pending: ['深度待生成', 'pending'],
-        ready: ['深度就绪', 'ready'],
-        skipped: ['无深度', 'skipped'],
-        error: ['深度失败', 'error'],
-      };
-      const [label, kind] = map[state] || [state || '-', 'pending'];
-      return statusBadge(label, kind);
-    }
-
-    async function openQueueNote(noteId) {
-      if (!noteId) return;
-      await loadNotes();
-      await navigateToNote(noteId);
-    }
-
-    async function revealQueueNote(noteId) {
-      if (!noteId) return;
-      const res = await fetch('/api/notes/' + encodeURIComponent(noteId) + '/reveal', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        toast(data.error || '定位文件失败');
-        return;
-      }
-      toast('已定位 News 文件');
-    }
-
-    function queueActions(item) {
-      if (!item.note_id) return '<span class="hint">先生成 News</span>';
-      return `<div class="queue-actions">
-        <button class="btn-secondary" onclick="openQueueNote('${item.note_id}')">打开 News</button>
-        <button class="btn-secondary" onclick="revealQueueNote('${item.note_id}')">定位文件</button>
-      </div>`;
-    }
-
     async function loadQueue() {
       const meta = document.getElementById('queue_meta');
-      const list = document.getElementById('queue_list');
-      if (!meta || !list) return;
+      if (!meta) return;
       try {
         const res = await fetch('/api/queue');
         const data = await res.json();
         const pushCount = data.push_count || data.settings?.push_count || 2;
         if (!data.exists || !data.items?.length) {
-          meta.textContent = '暂无待推清单。点击「随机刷新清单」从 Zotero 随机选文。';
-          list.innerHTML = '';
+          meta.textContent = '暂无待推清单。生成清单后，点击「生成 News」写入笔记库。';
           return;
         }
         const created = data.created_at ? `创建于 ${data.created_at}` : '';
         const prepared = data.prepared_at ? ` · 最近预生成 ${data.prepared_at}` : '';
-        meta.textContent = `${created}${prepared} · 就绪 ${data.push_ready_count}/${pushCount}（推送位）`;
-        const pushWindowKeys = new Set();
-        let nonPushed = 0;
-        for (const item of data.items) {
-          if (item.status === 'pushed') continue;
-          if (nonPushed >= pushCount) break;
-          pushWindowKeys.add(item.item_key);
-          nonPushed++;
-        }
-        list.innerHTML = `<table class="queue-table"><thead><tr>
-          <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th><th>News</th>
-        </tr></thead><tbody>` + data.items.map((item, i) => {
-          const inPushSlot = pushWindowKeys.has(item.item_key);
-          const slot = inPushSlot ? ' push-slot' : '';
-          const pdf = item.has_pdf ? '有' : '无';
-          return `<tr class="${slot.trim()}">
-            <td>${i + 1}${inPushSlot ? ' <span class="hint">推送</span>' : ''}</td>
-            <td>${esc(item.title || item.item_key)}</td>
-            <td>${queueStatusLabel(item.status)}</td>
-            <td>${deepReadLabel(item.deep_read)}</td>
-            <td>${pdf}</td>
-            <td>${queueActions(item)}</td>
-          </tr>`;
-        }).join('') + '</tbody></table>';
+        const total = data.items.length;
+        const ready = data.ready_count ?? data.items.filter(item => item.status === 'ready').length;
+        const pushed = data.items.filter(item => item.status === 'pushed').length;
+        meta.textContent = `${created}${prepared} · 清单 ${total} 篇 · News 就绪 ${ready} 篇 · 已推送 ${pushed} 篇 · 推送位 ${data.push_ready_count}/${pushCount}`;
       } catch (_) {
         meta.textContent = '加载待推清单失败';
       }
@@ -1158,7 +1093,7 @@
       const data = await res.json();
       if (!res.ok) { toast(data.error || '生成 News 失败'); return; }
       const n = data.prepared ?? 0;
-      toast(n > 0 ? `News 已生成（${n} 篇），可在笔记库或清单中打开` : 'News 已就绪，可在笔记库或清单中打开');
+      toast(n > 0 ? `News 已生成（${n} 篇），可在笔记库查看` : 'News 已就绪，可在笔记库查看');
       loadQueue();
       loadNotes();
     }
