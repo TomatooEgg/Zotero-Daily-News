@@ -22,7 +22,7 @@ from env_store import parse_env_file, set_env_values
 from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
-from platform_utils import open_target, reveal_path
+from platform_utils import no_window_subprocess_kwargs, open_target, reveal_path
 from push_finalize import apply_push_results
 from scheduler import reload_scheduler, scheduler_status
 from app_bridge import navigate_to_note, yield_focus_to_external_app
@@ -626,6 +626,7 @@ def api_run():
         capture_output=True,
         text=True,
         env={**os.environ, **load_env()},
+        **no_window_subprocess_kwargs(),
     )
     specs = parse_notify_stdout(result.stdout)
     sent, failed, notify_stderr, notify_results = dispatch_notifications(specs)

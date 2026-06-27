@@ -1,6 +1,3 @@
-from pathlib import Path
-
-
 def test_windows_scheduler_uses_powershell_scripts(monkeypatch, tmp_path):
     import scheduler
 
@@ -31,6 +28,7 @@ def test_windows_scheduler_uses_powershell_scripts(monkeypatch, tmp_path):
     create_calls = [cmd for cmd in calls if "/Create" in cmd]
     assert any("run.ps1" in " ".join(cmd) and "--push-queue" in " ".join(cmd) for cmd in create_calls)
     assert any("prepare_queue.ps1" in " ".join(cmd) for cmd in create_calls)
+    assert all("-WindowStyle Hidden" in " ".join(cmd) for cmd in create_calls)
     assert any("12:01" in cmd for cmd in create_calls)
     assert any("11:31" in cmd for cmd in create_calls)
 
@@ -39,6 +37,10 @@ def test_windows_scheduler_uses_frozen_executable(monkeypatch, tmp_path):
     import scheduler
 
     calls: list[list[str]] = []
+    app_exe = tmp_path / "Zotero Daily News.exe"
+    cli_exe = tmp_path / "Zotero Daily News CLI.exe"
+    app_exe.write_text("", encoding="utf-8")
+    cli_exe.write_text("", encoding="utf-8")
 
     class Result:
         returncode = 0
@@ -51,7 +53,7 @@ def test_windows_scheduler_uses_frozen_executable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(scheduler.sys, "platform", "win32")
     monkeypatch.setattr(scheduler.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(scheduler.sys, "executable", str(Path("C:/Apps/Zotero Daily News/Zotero Daily News.exe")))
+    monkeypatch.setattr(scheduler.sys, "executable", str(cli_exe))
     monkeypatch.setattr(scheduler.subprocess, "run", fake_run)
 
     ok, message = scheduler.reload_scheduler(
@@ -66,3 +68,4 @@ def test_windows_scheduler_uses_frozen_executable(monkeypatch, tmp_path):
     create_commands = [" ".join(cmd) for cmd in calls if "/Create" in cmd]
     assert any("Zotero Daily News.exe" in cmd and "--push-queue" in cmd for cmd in create_commands)
     assert any("Zotero Daily News.exe" in cmd and "--prepare-queue" in cmd for cmd in create_commands)
+    assert not any("Zotero Daily News CLI.exe" in cmd for cmd in create_commands)

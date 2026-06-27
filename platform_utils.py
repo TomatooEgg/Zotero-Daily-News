@@ -17,6 +17,12 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def no_window_subprocess_kwargs() -> dict[str, int]:
+    if not is_windows():
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+
+
 def open_target(target: str | Path) -> None:
     raw = str(target)
     if is_macos():

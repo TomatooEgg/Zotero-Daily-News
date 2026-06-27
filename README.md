@@ -34,7 +34,7 @@ On first launch the setup wizard asks for:
 
 The app saves the settings, tests DeepSeek and Zotero, then enables scheduled tasks only after validation succeeds.
 
-Windows scheduling uses Task Scheduler tasks named `ZoteroDailyNews\Push*` and `ZoteroDailyNews\Prepare*`.
+Windows scheduling uses hidden Task Scheduler tasks named `ZoteroDailyNews\Push*` and `ZoteroDailyNews\Prepare*`. The desktop window can be minimized or closed to the system tray; use the tray menu to reopen or quit the app.
 
 ## Required Setup Values
 

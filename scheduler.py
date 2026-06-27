@@ -10,6 +10,7 @@ import io
 from pathlib import Path
 
 from config_manager import SCRIPT_DIR, load_config
+from platform_utils import no_window_subprocess_kwargs
 from queue_manager import queue_settings
 
 TASK_PREFIX = os.environ.get("ZOTERO_DAILY_NEWS_TASK_PREFIX", "ZoteroDailyNews")
@@ -46,12 +47,12 @@ def _task_name(base: str, index: int) -> str:
 
 def _powershell_cmd(script: Path, *args: str) -> str:
     quoted = " ".join([f'"{script}"', *args])
-    return f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File {quoted}'
+    return f'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File {quoted}'
 
 
 def _windows_cmd(script: Path, *args: str) -> str:
     if getattr(sys, "frozen", False):
-        executable = Path(sys.executable).with_name("Zotero Daily News CLI.exe")
+        executable = Path(sys.executable).with_name("Zotero Daily News.exe")
         if not executable.exists():
             executable = Path(sys.executable)
         quoted_args = " ".join(args)
@@ -65,6 +66,7 @@ def _delete_windows_tasks() -> None:
         capture_output=True,
         text=True,
         check=False,
+        **no_window_subprocess_kwargs(),
     )
     if result.returncode != 0:
         return
@@ -80,6 +82,7 @@ def _delete_windows_tasks() -> None:
             capture_output=True,
             text=True,
             check=False,
+            **no_window_subprocess_kwargs(),
         )
 
 
@@ -110,6 +113,7 @@ def _create_windows_tasks(config: dict) -> tuple[bool, str]:
                 capture_output=True,
                 text=True,
                 check=False,
+                **no_window_subprocess_kwargs(),
             )
             if result.returncode != 0:
                 errors.append((result.stderr or result.stdout or "").strip())
@@ -124,6 +128,7 @@ def _windows_task_loaded(base: str) -> bool:
         capture_output=True,
         text=True,
         check=False,
+        **no_window_subprocess_kwargs(),
     )
     return result.returncode == 0
 

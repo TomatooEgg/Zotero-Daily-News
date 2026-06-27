@@ -29,6 +29,8 @@ build_exe_options = {
         "jinja2",
         "markdown",
         "openai",
+        "PIL",
+        "pystray",
         "pyzotero",
         "pypdf",
         "sgmllib",

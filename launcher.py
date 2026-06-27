@@ -22,6 +22,7 @@ from macos_window import (
     schedule_window_activate,
 )
 from net_env import ensure_local_no_proxy
+from platform_utils import is_windows
 from url_handler import (
     deeplink_launch_from_argv,
     digest_app_base_url,
@@ -170,6 +171,13 @@ def main() -> None:
             hidden=deeplink_background,
         )
         state["window"] = window
+        if is_windows():
+            try:
+                from windows_tray import install_windows_tray
+
+                install_windows_tray(window)
+            except Exception:
+                pass
         webview.start(on_gui_ready)
     except Exception as exc:
         import webbrowser

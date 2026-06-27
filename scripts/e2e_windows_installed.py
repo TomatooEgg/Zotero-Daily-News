@@ -10,7 +10,9 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from xml.etree import ElementTree
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 
@@ -108,13 +110,12 @@ def post_json(base_url: str, path: str, data: dict | None = None, timeout: int =
         return json.loads(response.read().decode("utf-8"))
 
 
-def wait_api(base_url: str, proc: subprocess.Popen[str], timeout: int = 60) -> dict:
+def wait_api(base_url: str, proc: subprocess.Popen, timeout: int = 60) -> dict:
     deadline = time.time() + timeout
     last: Exception | None = None
     while time.time() < deadline:
         if proc.poll() is not None:
-            out, err = proc.communicate(timeout=5)
-            raise RuntimeError(f"app exited early rc={proc.returncode}\nSTDOUT:\n{out}\nSTDERR:\n{err}")
+            raise RuntimeError(f"app exited early rc={proc.returncode}")
         try:
             return get_json(base_url, "/api/setup/status", timeout=2)
         except Exception as exc:
@@ -123,9 +124,59 @@ def wait_api(base_url: str, proc: subprocess.Popen[str], timeout: int = 60) -> d
     raise TimeoutError(f"app did not become ready at {base_url}: {last}")
 
 
+def log_step(message: str) -> None:
+    print(f"[e2e] {message}", flush=True)
+
+
 def task_exists(name: str) -> bool:
     result = subprocess.run(["schtasks.exe", "/Query", "/TN", name], capture_output=True, text=True, timeout=15)
     return result.returncode == 0
+
+
+def task_exec_text(name: str) -> str:
+    result = subprocess.run(
+        ["schtasks.exe", "/Query", "/TN", name, "/XML"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr or result.stdout)
+    root = ElementTree.fromstring(result.stdout)
+    parts = [node.text or "" for node in root.findall(".//{*}Exec/{*}Command")]
+    parts.extend(node.text or "" for node in root.findall(".//{*}Exec/{*}Arguments"))
+    return " ".join(parts)
+
+
+def wait_for_setup_modal(page, base_url: str) -> None:
+    try:
+        page.wait_for_function(
+            "document.querySelector('#setup_modal')?.classList.contains('open') === true",
+            timeout=20000,
+        )
+        return
+    except PlaywrightTimeoutError as exc:
+        state = page.evaluate(
+            """async () => {
+                const modal = document.querySelector('#setup_modal');
+                let setupStatus = null;
+                try {
+                    setupStatus = await fetch('/api/setup/status').then((res) => res.json());
+                } catch (err) {
+                    setupStatus = String(err);
+                }
+                return {
+                    readyState: document.readyState,
+                    title: document.title,
+                    modalClass: modal ? modal.className : null,
+                    modalDisplay: modal ? getComputedStyle(modal).display : null,
+                    setupStatus,
+                };
+            }"""
+        )
+        raise AssertionError(f"setup modal did not open at {base_url}: {json.dumps(state, ensure_ascii=False)}") from exc
 
 
 def delete_test_tasks(prefix: str) -> None:
@@ -180,33 +231,41 @@ def main() -> int:
         [str(cli_exe), "--serve-only"],
         cwd=str(install_dir),
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
+        log_step(f"waiting for installed app at {base_url}")
         initial = wait_api(base_url, proc)
         if not initial.get("needs_setup"):
             raise AssertionError(f"expected first-run setup, got {initial}")
 
+        log_step("opening first-run setup")
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
-            page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_selector("#setup_modal.open", timeout=20000)
-            page.fill("#setup_deepseek_api_key", "sk-local-test")
-            page.fill("#setup_deepseek_base_url", mock_base + "/v1")
-            page.fill("#setup_deepseek_briefing_model", "deepseek-v4-flash")
-            page.fill("#setup_deepseek_deep_read_model", "deepseek-v4-pro")
-            page.fill("#setup_zotero_api_key", "mock-zotero-key")
-            page.fill("#setup_zotero_library_id", "")
-            page.click("#setup_verify_btn")
-            page.wait_for_function(
-                "!document.querySelector('#setup_modal').classList.contains('open')",
-                timeout=60000,
-            )
-            browser.close()
+            try:
+                page = browser.new_page(viewport={"width": 1280, "height": 900})
+                page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
+                log_step("waiting for first-run setup modal")
+                wait_for_setup_modal(page, base_url)
+                log_step("submitting first-run setup")
+                page.fill("#setup_deepseek_api_key", "sk-local-test")
+                page.fill("#setup_deepseek_base_url", mock_base + "/v1")
+                page.fill("#setup_deepseek_briefing_model", "deepseek-v4-flash")
+                page.fill("#setup_deepseek_deep_read_model", "deepseek-v4-pro")
+                page.fill("#setup_zotero_api_key", "mock-zotero-key")
+                page.fill("#setup_zotero_library_id", "")
+                page.click("#setup_verify_btn")
+                page.wait_for_function(
+                    "!document.querySelector('#setup_modal').classList.contains('open')",
+                    timeout=60000,
+                )
+                log_step("first-run setup saved")
+            finally:
+                browser.close()
 
+        log_step("checking scheduled task")
         status = get_json(base_url, "/api/setup/status")
         if status.get("needs_setup"):
             raise AssertionError(f"setup still needed: {status}")
@@ -215,6 +274,11 @@ def main() -> int:
         task_name = f"{task_prefix}\\Push1"
         if not task_exists(task_name):
             raise AssertionError(f"test scheduled task was not created: {task_name}")
+        task_command = task_exec_text(task_name)
+        if "Zotero Daily News CLI.exe" in task_command or "powershell.exe" in task_command:
+            raise AssertionError(f"scheduled push task is not silent: {task_command}")
+        if "Zotero Daily News.exe" not in task_command:
+            raise AssertionError(f"scheduled push task does not use GUI exe: {task_command}")
 
         summaries = runtime_dir / "summaries"
         hubs = runtime_dir / "hubs"
@@ -257,17 +321,21 @@ def main() -> int:
         }
         (runtime_dir / "queue.json").write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        log_step("clicking UI push button")
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
-            page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_selector('button[onclick="runNow(false)"]', timeout=20000)
-            page.locator('button[onclick="runNow(false)"]').first.click()
-            page.wait_for_function(
-                "document.querySelector('#stdout_log') && document.querySelector('#stdout_log').textContent.includes('@@NOTIFY@@')",
-                timeout=60000,
-            )
-            browser.close()
+            try:
+                page = browser.new_page(viewport={"width": 1280, "height": 900})
+                page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_selector('button[onclick="runNow(false)"]', timeout=20000)
+                page.locator('button[onclick="runNow(false)"]').first.click()
+                page.wait_for_function(
+                    "document.querySelector('#stdout_log') && document.querySelector('#stdout_log').textContent.includes('@@NOTIFY@@')",
+                    timeout=60000,
+                )
+                log_step("UI push completed")
+            finally:
+                browser.close()
 
         q_after = json.loads((runtime_dir / "queue.json").read_text(encoding="utf-8"))
         item_status = q_after["items"][0].get("status")
@@ -287,6 +355,7 @@ def main() -> int:
         cli_queue = json.loads((runtime_dir / "queue.json").read_text(encoding="utf-8"))
         cli_queue["items"][0]["status"] = "ready"
         (runtime_dir / "queue.json").write_text(json.dumps(cli_queue, ensure_ascii=False, indent=2), encoding="utf-8")
+        log_step("running CLI push smoke")
         cli_result = subprocess.run(
             [str(cli_exe), "--push-queue", "--no-notify"],
             cwd=str(install_dir),
@@ -311,6 +380,7 @@ def main() -> int:
                     "mock_url": mock_base,
                     "task_prefix": task_prefix,
                     "created_task": task_name,
+                    "created_task_command": task_command,
                     "setup_needs_setup_after": status.get("needs_setup"),
                     "queue_status_after_ui_push": item_status,
                     "zotero_created_note": push_result.get("note_key"),

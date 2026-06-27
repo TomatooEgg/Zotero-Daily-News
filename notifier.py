@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from platform_utils import is_macos, is_windows, open_target
+from platform_utils import is_macos, is_windows, no_window_subprocess_kwargs, open_target
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
@@ -306,6 +306,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         capture_output=True,
         text=True,
         env=env,
+        **no_window_subprocess_kwargs(),
     )
     if verbose:
         print(f"[windows-toast] exit={result.returncode}", file=sys.stderr)
