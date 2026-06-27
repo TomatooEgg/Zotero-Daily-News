@@ -61,7 +61,7 @@ install_binary() {
     src="$(command -v "$name")"
     if [[ "$name" == "terminal-notifier" && -f "$src" && $(stat -f%z "$src") -lt 4096 ]]; then
       local real
-      real=$(grep -o '"/[^"]*terminal-notifier"' "$src" | tr -d '"' | head -1)
+      real=$(grep -o '"/[^"]*terminal-notifier"' "$src" | tr -d '"' | head -1 || true)
       [[ -n "$real" && -f "$real" ]] && src="$real"
     fi
     cp "$src" "$dest"
