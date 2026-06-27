@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from config_manager import SCRIPT_DIR
-from md_render import normalize_plaintext
-from zotero_links import zotero_item_url, zotero_pdf_url
+from .config_manager import SCRIPT_DIR
+from .md_render import normalize_plaintext
+from .zotero_links import zotero_item_url, zotero_pdf_url
 
 KEY_TERMS_HEADING = "## 关键术语"
 LEGACY_KEY_TERMS_HEADING = "## 关键术语 · 原文定位"
@@ -125,9 +125,9 @@ def ensure_hub_assets(hubs_dir: Path) -> None:
 
 
 def build_hub_html(note_id: str) -> str:
-    from app import app
-    from config_manager import load_config, resolve_output_dirs
-    from note_view import render_hub_static_html
+    from .app import app
+    from .config_manager import load_config, resolve_output_dirs
+    from .note_view import render_hub_static_html
 
     _, hubs_dir = resolve_output_dirs(load_config())
     ensure_hub_assets(hubs_dir)

@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from config_manager import load_config
-from net_env import ensure_local_no_proxy
-from platform_utils import is_macos, open_target
+from .config_manager import load_config
+from .net_env import ensure_local_no_proxy
+from .platform_utils import is_macos, open_target
 
 DEEPLINK_SCHEME = "zotero-digest"
 

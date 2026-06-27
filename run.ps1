@@ -11,5 +11,5 @@ if (-not (Test-Path $Python)) {
   $Python = "python"
 }
 
-& $Python (Join-Path $ProjectDir "digest.py") @args
+& $Python -m zotero_daily_news.digest @args
 exit $LASTEXITCODE

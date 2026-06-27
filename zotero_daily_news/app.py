@@ -15,22 +15,22 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 from openai import OpenAI
 
-from abstract_zh import generate_abstract_zh
-from config_manager import DEFAULT_CONFIG, ENV_PATH, SCRIPT_DIR, deepseek_briefing_model, deepseek_deep_read_model, load_config, logs_dir, resolve_output_dirs, save_config
-from deep_read import generate_deep_read
-from env_store import parse_env_file, set_env_values
-from notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
-from note_view import prepare_note_view_context, render_note_view_html
-from notifier import notify_macos, parse_notify_stdout
-from platform_utils import no_window_subprocess_kwargs, open_target, reveal_path
-from push_finalize import apply_push_results
-from scheduler import reload_scheduler, scheduler_status
-from app_bridge import navigate_to_note, yield_focus_to_external_app
-from url_handler import open_digest_app_for_note
-from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
-from zotero_open import open_zotero_deeplink
-from seed_test_note import ensure_test_note
-from zotero_push import push_digest_note, push_status
+from .abstract_zh import generate_abstract_zh
+from .config_manager import DEFAULT_CONFIG, ENV_PATH, SCRIPT_DIR, deepseek_briefing_model, deepseek_deep_read_model, load_config, logs_dir, resolve_output_dirs, save_config
+from .deep_read import generate_deep_read
+from .env_store import parse_env_file, set_env_values
+from .notes_index import delete_note, delete_notes, delete_notes_by_date, get_note, group_by_date, list_notes
+from .note_view import prepare_note_view_context, render_note_view_html
+from .notifier import notify_macos, parse_notify_stdout
+from .platform_utils import no_window_subprocess_kwargs, open_target, reveal_path
+from .push_finalize import apply_push_results
+from .scheduler import reload_scheduler, scheduler_status
+from .app_bridge import navigate_to_note, yield_focus_to_external_app
+from .url_handler import open_digest_app_for_note
+from .zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
+from .zotero_open import open_zotero_deeplink
+from .seed_test_note import ensure_test_note
+from .zotero_push import push_digest_note, push_status
 
 app = Flask(
     __name__,
@@ -149,6 +149,16 @@ def python_cmd(*script_args: str) -> list[str]:
         cmd = [python_bin(), *script_args[1:]]
     else:
         cmd = [python_bin(), *script_args]
+    if is_apple_silicon():
+        return ["arch", "-arm64", *cmd]
+    return cmd
+
+
+def python_module_cmd(module: str, *module_args: str) -> list[str]:
+    if getattr(sys, "frozen", False):
+        cmd = [python_bin(), *module_args]
+    else:
+        cmd = [python_bin(), "-m", module, *module_args]
     if is_apple_silicon():
         return ["arch", "-arm64", *cmd]
     return cmd
@@ -581,14 +591,14 @@ def api_save_config():
 
 @app.get("/api/queue")
 def api_get_queue():
-    from queue_manager import queue_summary_for_ui
+    from .queue_manager import queue_summary_for_ui
 
     return jsonify(queue_summary_for_ui())
 
 
 @app.post("/api/queue/refresh")
 def api_refresh_queue():
-    from queue_manager import refresh_queue
+    from .queue_manager import refresh_queue
 
     force = bool(request.json and request.json.get("force"))
     try:
@@ -600,7 +610,7 @@ def api_refresh_queue():
 
 @app.post("/api/queue/prepare")
 def api_prepare_queue():
-    from queue_manager import prepare_queue
+    from .queue_manager import prepare_queue
 
     skip_llm = bool(request.json and request.json.get("metadata_only"))
     try:
@@ -620,10 +630,10 @@ def api_reload_schedule():
 @app.post("/api/run")
 def api_run():
     force = bool(request.json and request.json.get("force"))
-    script_args = [str(SCRIPT_DIR / "digest.py"), "--no-notify", "--push-queue"]
+    script_args = ["--no-notify", "--push-queue"]
     if force:
         script_args.append("--force")
-    cmd = python_cmd(*script_args)
+    cmd = python_module_cmd("zotero_daily_news.digest", *script_args)
     result = subprocess.run(
         cmd,
         cwd=str(SCRIPT_DIR),
@@ -695,7 +705,7 @@ def api_status():
 
 
 def main() -> None:
-    from launcher import main as launch_main
+    from .launcher import main as launch_main
 
     launch_main()
 

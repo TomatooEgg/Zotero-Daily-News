@@ -7,8 +7,8 @@ from pathlib import Path
 
 import httpx
 
-from config_manager import ENV_PATH
-from env_store import parse_env_file, set_env_values
+from .config_manager import ENV_PATH
+from .env_store import parse_env_file, set_env_values
 
 ENV_KEYS = ("ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID")
 
@@ -89,7 +89,7 @@ def resolve_library_id(api_key: str) -> str:
 
 
 def test_zotero_connection() -> dict:
-    from net_env import connect_zotero_web
+    from .net_env import connect_zotero_web
 
     creds = get_zotero_credentials()
     if not creds["api_key"]:

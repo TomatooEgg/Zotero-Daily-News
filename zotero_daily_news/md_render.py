@@ -8,7 +8,7 @@ import re
 import bleach
 import markdown
 
-from mermaid_sanitize import escape_bare_underscores, escape_pipes_in_table_math
+from .mermaid_sanitize import escape_bare_underscores, escape_pipes_in_table_math
 
 _MD_EXTENSIONS = ["extra", "nl2br", "sane_lists"]
 _TABLE_ROW_RE = re.compile(r"^\s*\|")

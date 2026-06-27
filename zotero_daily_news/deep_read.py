@@ -9,20 +9,20 @@ from typing import Any
 
 from openai import OpenAI
 
-from config_manager import (
+from .config_manager import (
     ENV_PATH,
     SCRIPT_DIR,
     build_pdf_summary_messages,
     deepseek_deep_read_model,
     load_config,
 )
-from digest import build_llm_context, load_dotenv
-from net_env import connect_zotero
-from notes_index import get_note
-from pdf_text import extract_pdf_text
-from md_render import markdown_to_html
-from mermaid_sanitize import sanitize_deep_read_body
-from summary_io import (
+from .digest import build_llm_context, load_dotenv
+from .net_env import connect_zotero
+from .notes_index import get_note
+from .pdf_text import extract_pdf_text
+from .md_render import markdown_to_html
+from .mermaid_sanitize import sanitize_deep_read_body
+from .summary_io import (
     KEY_TERMS_HEADING,
     LEGACY_KEY_TERMS_HEADING,
     build_hub_html,
@@ -32,7 +32,7 @@ from summary_io import (
     repair_sections_from_json_blob,
     render_key_terms_section,
 )
-from zotero_links import get_pdf_attachment
+from .zotero_links import get_pdf_attachment
 
 DEEP_READ_HEADING = "## 全文深度解读"
 LEGACY_DEEP_READ_HEADING = "## PDF 深度解读"

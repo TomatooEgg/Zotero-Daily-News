@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from macos_window import digest_app_bundle_path, remember_frontmost_app_to_file
-from url_handler import deeplink_from_argv, deeplink_wants_activate, parse_deeplink
+from .macos_window import digest_app_bundle_path, remember_frontmost_app_to_file
+from .url_handler import deeplink_from_argv, deeplink_wants_activate, parse_deeplink
 
 LINK_LOG = Path.home() / "Library/Application Support/Zotero Digest/link.log"
 
@@ -116,7 +116,7 @@ def main() -> None:
         except ImportError:
             note_id = deeplink_from_argv()
             if note_id:
-                from url_handler import deeplink_for_note
+                from .url_handler import deeplink_for_note
 
                 handle_deeplink(deeplink_for_note(note_id))
             return

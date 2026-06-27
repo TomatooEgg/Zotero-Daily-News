@@ -11,9 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from platform_utils import is_macos, is_windows, no_window_subprocess_kwargs, open_target
+from .config_manager import SCRIPT_DIR
+from .platform_utils import is_macos, is_windows, no_window_subprocess_kwargs, open_target
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
 LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
 NOTIFY_PREFIX = "@@NOTIFY@@"
@@ -147,21 +147,21 @@ def _terminal_notifier_execute_cmd(note_id: str) -> str:
     inner = (
         f"cd {shlex.quote(str(SCRIPT_DIR))} && "
         f"NO_PROXY=127.0.0.1,localhost,::1 "
-        f"{shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} "
+        f"{shlex.quote(py)} -m zotero_daily_news.notifier "
         f"--open-target {shlex.quote(note_id)}"
     )
     try:
         import subprocess as sp
 
         if sp.run(["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True).stdout.strip() == "1":
-            return f"cd {shlex.quote(str(SCRIPT_DIR))} && NO_PROXY=127.0.0.1,localhost,::1 arch -arm64 {shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} --open-target {shlex.quote(note_id)}"
+            return f"cd {shlex.quote(str(SCRIPT_DIR))} && NO_PROXY=127.0.0.1,localhost,::1 arch -arm64 {shlex.quote(py)} -m zotero_daily_news.notifier --open-target {shlex.quote(note_id)}"
     except OSError:
         pass
     return inner
 
 
 def _open_notify_target(note_id: str | None, hub_path: Path | None) -> None:
-    from url_handler import open_notify_target
+    from .url_handler import open_notify_target
 
     resolved = _resolve_note_id(note_id, hub_path)
     if not resolved:
@@ -285,7 +285,7 @@ def _windows_toast_target(note_id: str | None, hub_path: Path | None) -> str:
     if note_id:
         try:
             _register_windows_protocol_handler()
-            from url_handler import deeplink_for_note
+            from .url_handler import deeplink_for_note
 
             return deeplink_for_note(note_id, activate=True)
         except Exception:
@@ -300,7 +300,7 @@ def _register_windows_protocol_handler() -> None:
         return
     import winreg
 
-    from url_handler import DEEPLINK_SCHEME
+    from .url_handler import DEEPLINK_SCHEME
 
     exe = Path(sys.executable)
     if getattr(sys, "frozen", False):

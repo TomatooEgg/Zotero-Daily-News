@@ -10,9 +10,9 @@ import threading
 import time
 from typing import Any
 
-from app_bridge import set_navigate_to_note, set_yield_focus
-from config_manager import load_config
-from macos_window import (
+from .app_bridge import set_navigate_to_note, set_yield_focus
+from .config_manager import load_config
+from .macos_window import (
     activate_window,
     chain_macos_app_handlers,
     order_front_without_activate,
@@ -21,9 +21,9 @@ from macos_window import (
     schedule_deeplink_focus_release,
     schedule_window_activate,
 )
-from net_env import ensure_local_no_proxy
-from platform_utils import is_windows
-from url_handler import (
+from .net_env import ensure_local_no_proxy
+from .platform_utils import is_windows
+from .url_handler import (
     deeplink_launch_from_argv,
     digest_app_base_url,
     navigate_to_note_in_app,
@@ -69,7 +69,7 @@ def _show_window(window: Any, *, activate: bool) -> None:
 
 def main() -> None:
     ensure_local_no_proxy()
-    from app import app
+    from .app import app
 
     base_url = digest_app_base_url()
     pending_note_id, deeplink_activate = deeplink_launch_from_argv()
@@ -173,7 +173,7 @@ def main() -> None:
         state["window"] = window
         if is_windows():
             try:
-                from windows_tray import install_windows_tray
+                from .windows_tray import install_windows_tray
 
                 install_windows_tray(window)
             except Exception:

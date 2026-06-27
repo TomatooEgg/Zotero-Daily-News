@@ -14,7 +14,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from config_manager import (
+from .config_manager import (
     ENV_PATH,
     SCRIPT_DIR,
     build_summary_prompt,
@@ -23,14 +23,14 @@ from config_manager import (
     resolve_output_dirs,
     runtime_path,
 )
-from env_store import parse_env_file
-from net_env import connect_zotero
-from notifier import diagnose as notify_diagnose
-from notifier import emit_notify_payload, notify_macos, SUMMARY_ACTION
-from notes_index import find_note_by_item_key
-from pending_publish import mark_pending
-from summary_io import clean_terms, ensure_hub_path, parse_llm_summary, write_outputs
-from zotero_links import get_pdf_attachment
+from .env_store import parse_env_file
+from .net_env import connect_zotero
+from .notifier import diagnose as notify_diagnose
+from .notifier import emit_notify_payload, notify_macos, SUMMARY_ACTION
+from .notes_index import find_note_by_item_key
+from .pending_publish import mark_pending
+from .summary_io import clean_terms, ensure_hub_path, parse_llm_summary, write_outputs
+from .zotero_links import get_pdf_attachment
 
 HISTORY_PATH = runtime_path("history.json")
 def load_dotenv(path: Path) -> None:
@@ -243,7 +243,7 @@ def _record_if_published(
         return
     if no_notify:
         return
-    from push_finalize import apply_push_action
+    from .push_finalize import apply_push_action
 
     if apply_push_action(
         item_key=item_key,
@@ -393,7 +393,7 @@ def run(
 
 
 def test_notification(verbose: bool = False) -> int:
-    from seed_test_note import ensure_test_note
+    from .seed_test_note import ensure_test_note
 
     sample = ensure_test_note()
     ok, _action = notify_macos(
@@ -448,20 +448,20 @@ def main() -> None:
     if args.test_notify:
         sys.exit(test_notification(verbose=args.verbose_notify))
     if args.prepare_queue:
-        from queue_manager import prepare_queue, refresh_queue
+        from .queue_manager import prepare_queue, refresh_queue
 
         if args.refresh_queue or args.force or not __import__("queue_manager").load_queue():
             refresh_queue(force=args.force)
         prepare_queue(skip_llm=args.metadata_only)
         sys.exit(0)
     if args.refresh_queue:
-        from queue_manager import refresh_queue
+        from .queue_manager import refresh_queue
 
         refresh_queue(force=args.force)
         print("待推清单已刷新")
         sys.exit(0)
     if args.push_queue:
-        from queue_manager import prepare_queue, push_from_queue, refresh_queue
+        from .queue_manager import prepare_queue, push_from_queue, refresh_queue
 
         if args.force:
             sys.exit(

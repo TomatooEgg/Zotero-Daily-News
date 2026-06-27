@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config_manager import load_config, resolve_output_dirs
-from notes_index import list_notes
-from summary_io import build_hub_html, ensure_hub_assets
+from .config_manager import load_config, resolve_output_dirs
+from .notes_index import list_notes
+from .summary_io import build_hub_html, ensure_hub_assets
 
 
 def main() -> None:

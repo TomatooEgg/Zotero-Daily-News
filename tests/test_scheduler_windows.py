@@ -1,5 +1,5 @@
 def test_windows_scheduler_uses_powershell_scripts(monkeypatch, tmp_path):
-    import scheduler
+    from zotero_daily_news import scheduler
 
     calls: list[list[str]] = []
 
@@ -34,7 +34,7 @@ def test_windows_scheduler_uses_powershell_scripts(monkeypatch, tmp_path):
 
 
 def test_windows_scheduler_uses_frozen_executable(monkeypatch, tmp_path):
-    import scheduler
+    from zotero_daily_news import scheduler
 
     calls: list[list[str]] = []
     app_exe = tmp_path / "Zotero Daily News.exe"

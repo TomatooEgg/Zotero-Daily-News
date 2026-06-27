@@ -1,5 +1,5 @@
 def test_actions_panel_does_not_render_queue_note_table(monkeypatch):
-    import app as app_module
+    from zotero_daily_news import app as app_module
 
     monkeypatch.setattr(app_module, "scheduler_status", lambda: {"loaded": False, "name": "TestTask"})
 

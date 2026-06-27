@@ -97,9 +97,9 @@ if [ "$#" -gt 0 ]; then
     > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
 fi
 if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" "$PROJECT/launcher.py" "$@"
+  exec arch -arm64 "$PYTHON" -m zotero_daily_news.launcher "$@"
 else
-  exec "$PYTHON" "$PROJECT/launcher.py" "$@"
+  exec "$PYTHON" -m zotero_daily_news.launcher "$@"
 fi
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
@@ -134,9 +134,9 @@ for arg in "$@"; do
   esac
 done
 if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
+  exec arch -arm64 "$PYTHON" -m zotero_daily_news.digest_link_handler "$@"
 else
-  exec "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
+  exec "$PYTHON" -m zotero_daily_news.digest_link_handler "$@"
 fi
 LINK_LAUNCHER
 chmod +x "$LINK_DIR/Contents/MacOS/launcher"

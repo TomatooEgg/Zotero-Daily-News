@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_python_cmd_uses_frozen_executable_for_digest(monkeypatch):
-    import app
+    from zotero_daily_news import app
 
     monkeypatch.setattr(app.sys, "frozen", True, raising=False)
     monkeypatch.setattr(app.sys, "executable", r"C:\Apps\Zotero Daily News\Zotero Daily News.exe")
@@ -14,7 +14,7 @@ def test_python_cmd_uses_frozen_executable_for_digest(monkeypatch):
 
 
 def test_python_bin_prefers_windows_venv_python(monkeypatch, tmp_path):
-    import app
+    from zotero_daily_news import app
 
     venv_python = tmp_path / ".venv" / "Scripts" / "python.exe"
     venv_python.parent.mkdir(parents=True)
@@ -24,3 +24,15 @@ def test_python_bin_prefers_windows_venv_python(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "SCRIPT_DIR", tmp_path)
 
     assert app.python_bin() == str(venv_python)
+
+
+def test_python_module_cmd_uses_module_in_source(monkeypatch):
+    from zotero_daily_news import app
+
+    monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "is_apple_silicon", lambda: False)
+    monkeypatch.setattr(app, "python_bin", lambda: "python")
+
+    cmd = app.python_module_cmd("zotero_daily_news.digest", "--push-queue")
+
+    assert cmd == ["python", "-m", "zotero_daily_news.digest", "--push-queue"]

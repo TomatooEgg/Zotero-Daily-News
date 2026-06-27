@@ -11,5 +11,5 @@ if (-not (Test-Path $Python)) {
   $Python = "python"
 }
 
-& $Python (Join-Path $ProjectDir "digest.py") --refresh-queue --prepare-queue
+& $Python -m zotero_daily_news.digest --refresh-queue --prepare-queue
 exit $LASTEXITCODE

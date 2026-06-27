@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from config_manager import load_config, resolve_output_dirs, runtime_path
-from pending_publish import is_pending
+from .config_manager import load_config, resolve_output_dirs, runtime_path
+from .pending_publish import is_pending
 
 HISTORY_PATH = runtime_path("history.json")
 

@@ -47,7 +47,7 @@ def connect_zotero() -> zotero.Zotero:
 
 def connect_zotero_web() -> zotero.Zotero:
     """Zotero Web API（用于创建/更新子笔记）。需配置 ZOTERO_API_KEY。"""
-    from zotero_credentials import get_zotero_credentials, resolve_library_id
+    from .zotero_credentials import get_zotero_credentials, resolve_library_id
 
     creds = get_zotero_credentials()
     api_key = creds["api_key"]

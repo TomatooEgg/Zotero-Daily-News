@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 
 def test_windows_toast_uses_protocol_activation(monkeypatch, tmp_path):
-    import notifier
+    from zotero_daily_news import notifier
 
     hub = tmp_path / "news.html"
     hub.write_text("<h1>News</h1>", encoding="utf-8")
@@ -48,7 +48,7 @@ def test_windows_toast_uses_protocol_activation(monkeypatch, tmp_path):
 
 
 def test_windows_toast_target_falls_back_to_hub_file(tmp_path):
-    import notifier
+    from zotero_daily_news import notifier
 
     hub = tmp_path / "news.html"
     hub.write_text("<h1>News</h1>", encoding="utf-8")
@@ -57,7 +57,7 @@ def test_windows_toast_target_falls_back_to_hub_file(tmp_path):
 
 
 def test_windows_toast_reports_failure(monkeypatch):
-    import notifier
+    from zotero_daily_news import notifier
 
     def fake_run(cmd, **kwargs):
         return SimpleNamespace(returncode=1, stdout="", stderr="toast failed")

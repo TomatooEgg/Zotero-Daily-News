@@ -12,12 +12,12 @@ from typing import Any
 
 from openai import OpenAI
 
-from config_manager import load_config, resolve_output_dirs, runtime_path
-from net_env import connect_zotero
-from notes_index import NoteEntry, latest_notes_by_item_key
-from pending_publish import mark_pending
-from summary_io import clean_terms, ensure_hub_path, write_outputs
-from zotero_links import get_pdf_attachment
+from .config_manager import load_config, resolve_output_dirs, runtime_path
+from .net_env import connect_zotero
+from .notes_index import NoteEntry, latest_notes_by_item_key
+from .pending_publish import mark_pending
+from .summary_io import clean_terms, ensure_hub_path, write_outputs
+from .zotero_links import get_pdf_attachment
 
 QUEUE_PATH = runtime_path("queue.json")
 
@@ -88,7 +88,7 @@ def queue_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
 def _item_meta(item: dict[str, Any], zot) -> dict[str, Any]:
     data = item["data"]
     pdf = get_pdf_attachment(zot, item["key"])
-    from digest import format_authors
+    from .digest import format_authors
 
     return {
         "item_key": item["key"],
@@ -107,7 +107,7 @@ def _item_meta(item: dict[str, Any], zot) -> dict[str, Any]:
 
 def refresh_queue(*, force: bool = False) -> dict[str, Any]:
     """随机抽取 queue.size 篇文献，写入固定 item_key 列表。"""
-    from digest import (
+    from .digest import (
         fetch_articles,
         load_history,
         pick_items,
@@ -147,7 +147,7 @@ def _find_zotero_item(zot, item_key: str) -> dict[str, Any] | None:
 
 
 def _prepare_deep_read_only(entry: dict[str, Any], config: dict[str, Any]) -> None:
-    from deep_read import generate_deep_read
+    from .deep_read import generate_deep_read
 
     pdf_summary_enabled = bool((config.get("pdf_summary") or {}).get("enabled", True))
     if not pdf_summary_enabled or not entry.get("has_pdf") or not entry.get("note_id"):
@@ -183,7 +183,7 @@ def _apply_existing_summary(
 
     data = item["data"]
     entry["title"] = data.get("title", entry.get("title") or "无标题")
-    from digest import format_authors
+    from .digest import format_authors
 
     entry["authors"] = format_authors(data.get("creators", []))
     entry["has_pdf"] = get_pdf_attachment(zot, item_key) is not None
@@ -217,7 +217,7 @@ def _prepare_one(
     pre_deep_read: bool,
     existing: NoteEntry | None = None,
 ) -> None:
-    from digest import generate_full_summary, metadata_only_summary, metadata_summary
+    from .digest import generate_full_summary, metadata_only_summary, metadata_summary
 
     item_key = entry["item_key"]
     if existing:
@@ -239,7 +239,7 @@ def _prepare_one(
 
     data = item["data"]
     entry["title"] = data.get("title", entry.get("title") or "无标题")
-    from digest import format_authors
+    from .digest import format_authors
 
     entry["authors"] = format_authors(data.get("creators", []))
 
@@ -294,7 +294,7 @@ def prepare_queue(
     limit: int | None = None,
 ) -> tuple[dict[str, Any], int]:
     """为待推清单前 push_count 篇预生成简报与深度解读。"""
-    from digest import ENV_PATH, load_dotenv
+    from .digest import ENV_PATH, load_dotenv
 
     load_dotenv(ENV_PATH)
     config = load_config()
@@ -357,8 +357,8 @@ def push_from_queue(
     force_prepare: bool = True,
 ) -> int:
     """从待推清单推送前 push_count 篇已就绪笔记。"""
-    from digest import emit_notification, load_history, record_pushed
-    from push_finalize import apply_push_action
+    from .digest import emit_notification, load_history, record_pushed
+    from .push_finalize import apply_push_action
 
     config = load_config()
     settings = queue_settings(config)

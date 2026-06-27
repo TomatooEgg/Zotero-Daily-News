@@ -6,11 +6,11 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from abstract_zh import extract_abstract_zh, has_abstract_zh, strip_abstract_zh_md
-from md_render import markdown_to_html
-from net_env import connect_zotero, connect_zotero_web
-from notes_index import get_note
-from zotero_credentials import is_zotero_configured
+from .abstract_zh import extract_abstract_zh, has_abstract_zh, strip_abstract_zh_md
+from .md_render import markdown_to_html
+from .net_env import connect_zotero, connect_zotero_web
+from .notes_index import get_note
+from .zotero_credentials import is_zotero_configured
 
 DIGEST_NOTE_TAG = "zotero-digest"
 ZH_START = "<!-- zh-abstract -->"

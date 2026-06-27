@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from digest import load_history, record_pushed
-from notifier import is_publish_action
-from pending_publish import publish_note
-from queue_manager import STATUS_PUSHED, load_queue, save_queue
+from .digest import load_history, record_pushed
+from .notifier import is_publish_action
+from .pending_publish import publish_note
+from .queue_manager import STATUS_PUSHED, load_queue, save_queue
 
 
 def apply_push_action(

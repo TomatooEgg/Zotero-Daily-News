@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from config_manager import SCRIPT_DIR
+from .config_manager import SCRIPT_DIR
 
 FRONT_APP_FILE = Path.home() / "Library/Application Support/Zotero Digest/front_app.txt"
 IGNORE_FRONT_APP_NAMES = frozenset(
@@ -289,7 +289,7 @@ def chain_macos_app_handlers(
 
         def application_openURLs_(self, application, urls):
             if self._on_note:
-                from url_handler import deeplink_wants_activate, parse_deeplink
+                from .url_handler import deeplink_wants_activate, parse_deeplink
 
                 for url in urls:
                     raw = str(url.absoluteString())

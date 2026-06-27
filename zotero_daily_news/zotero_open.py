@@ -7,8 +7,8 @@ import sys
 import threading
 import time
 
-from net_env import connect_zotero
-from platform_utils import open_target
+from .net_env import connect_zotero
+from .platform_utils import open_target
 
 
 def _is_zotero_api_ready() -> bool:

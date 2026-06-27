@@ -9,9 +9,9 @@ import csv
 import io
 from pathlib import Path
 
-from config_manager import SCRIPT_DIR, load_config
-from platform_utils import no_window_subprocess_kwargs
-from queue_manager import queue_settings
+from .config_manager import SCRIPT_DIR, load_config
+from .platform_utils import no_window_subprocess_kwargs
+from .queue_manager import queue_settings
 
 TASK_PREFIX = os.environ.get("ZOTERO_DAILY_NEWS_TASK_PREFIX", "ZoteroDailyNews")
 PUSH_TASK = f"{TASK_PREFIX}\\Push"
@@ -135,7 +135,7 @@ def _windows_task_loaded(base: str) -> bool:
 
 def scheduler_status() -> dict:
     if sys.platform == "darwin":
-        from launchd_mgr import launchd_status
+        from .launchd_mgr import launchd_status
 
         status = launchd_status()
         status["platform"] = "macos"
@@ -175,7 +175,7 @@ def scheduler_status() -> dict:
 def reload_scheduler(config: dict | None = None) -> tuple[bool, str]:
     config = config or load_config()
     if sys.platform == "darwin":
-        from launchd_mgr import reload_launchd
+        from .launchd_mgr import reload_launchd
 
         return reload_launchd(config)
     if sys.platform == "win32":

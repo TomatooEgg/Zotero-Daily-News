@@ -1,5 +1,5 @@
 def test_list_notes_can_include_pending(monkeypatch, tmp_path):
-    import notes_index
+    from zotero_daily_news import notes_index
 
     summaries = tmp_path / "summaries"
     hubs = tmp_path / "hubs"

@@ -6,14 +6,14 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from abstract_zh import (
+from .abstract_zh import (
     extract_abstract_zh,
     extract_original_abstract,
     has_abstract_zh,
     strip_abstract_zh_md,
 )
-from config_manager import load_config
-from deep_read import (
+from .config_manager import load_config
+from .deep_read import (
     deep_read_to_html,
     extract_deep_read_md,
     has_deep_read,
@@ -21,10 +21,10 @@ from deep_read import (
     repair_deep_read_md,
     strip_deep_read_md,
 )
-from md_render import markdown_to_html, prepare_overview_markdown
-from notes_index import get_note
-from url_handler import deeplink_for_note
-from zotero_links import get_pdf_attachment, zotero_item_url, zotero_pdf_url
+from .md_render import markdown_to_html, prepare_overview_markdown
+from .notes_index import get_note
+from .url_handler import deeplink_for_note
+from .zotero_links import get_pdf_attachment, zotero_item_url, zotero_pdf_url
 
 Viewer = Literal["app", "hub", "standalone"]
 
@@ -40,7 +40,7 @@ def parse_pdf_url_from_md(md_text: str) -> str:
 
 def resolve_pdf_url(md_text: str, item_key: str) -> str:
     try:
-        from net_env import connect_zotero
+        from .net_env import connect_zotero
 
         zot = connect_zotero()
         pdf = get_pdf_attachment(zot, item_key)

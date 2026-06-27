@@ -1,4 +1,4 @@
-from md_render import markdown_to_html
+from zotero_daily_news.md_render import markdown_to_html
 
 
 def test_markdown_to_html_sanitizes_llm_html():

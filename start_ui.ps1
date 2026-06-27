@@ -11,5 +11,5 @@ if (-not (Test-Path $Python)) {
   $Python = "python"
 }
 
-& $Python (Join-Path $ProjectDir "launcher.py")
+& $Python -m zotero_daily_news.launcher
 exit $LASTEXITCODE

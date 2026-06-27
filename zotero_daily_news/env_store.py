@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-from config_manager import ENV_PATH, SCRIPT_DIR
+from .config_manager import ENV_PATH, SCRIPT_DIR
 
 LEGACY_ENV_PATH = SCRIPT_DIR / ".env"
 

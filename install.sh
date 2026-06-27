@@ -60,7 +60,7 @@ else
   echo "    （无 alerter 时仍可点击通知正文跳转 HTML）"
 fi
 
-chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/prepare_queue.sh" "$PROJECT_DIR/digest.py" "$PROJECT_DIR/app.py"
+chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/prepare_queue.sh" "$PROJECT_DIR/zotero_daily.py"
 
 echo "==> 构建桌面应用"
 bash "$PROJECT_DIR/build_app.sh"

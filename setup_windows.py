@@ -36,6 +36,7 @@ build_exe_options = {
         "sgmllib",
         "webview",
         "yaml",
+        "zotero_daily_news",
     ],
     "excludes": [
         "Cython",

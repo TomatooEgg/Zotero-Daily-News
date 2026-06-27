@@ -7,9 +7,9 @@ import plistlib
 import subprocess
 from pathlib import Path
 
-from config_manager import SCRIPT_DIR, load_config, logs_dir, runtime_path
-from net_env import LOCAL_NO_PROXY
-from queue_manager import queue_settings
+from .config_manager import SCRIPT_DIR, load_config, logs_dir, runtime_path
+from .net_env import LOCAL_NO_PROXY
+from .queue_manager import queue_settings
 
 PLIST_LABEL = "com.TomatooEgg.zotero-digest"
 PLIST_PREPARE_LABEL = "com.TomatooEgg.zotero-digest.prepare"

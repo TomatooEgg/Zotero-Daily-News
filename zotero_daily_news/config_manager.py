@@ -16,7 +16,7 @@ def _resource_dir() -> Path:
         return Path(pyinstaller_dir)
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
 
 SCRIPT_DIR = _resource_dir()
