@@ -33,6 +33,17 @@ from .url_handler import (
 PORT = int((load_config().get("ui") or {}).get("port", 18765))
 
 
+def smoke_test() -> None:
+    """Validate imports used by the double-click GUI path without opening a window."""
+    ensure_local_no_proxy()
+    from .app import app as flask_app
+    import webview
+
+    if not flask_app or not webview:
+        raise RuntimeError("launcher smoke test failed")
+    print("launcher smoke ok")
+
+
 def _port_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("127.0.0.1", port)) != 0

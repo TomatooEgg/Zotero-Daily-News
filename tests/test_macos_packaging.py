@@ -52,3 +52,15 @@ def test_dmg_script_uses_frozen_runtime_not_bundled_venv():
     assert "Contents/Resources/runtime" in script
     assert "Contents/Resources/app/.venv" not in script
     assert 'exec "$EXECUTABLE" "$@"' in script
+
+
+def test_packaged_entry_routes_smoke_test(monkeypatch):
+    from zotero_daily_news import launcher, zotero_daily
+
+    calls = []
+    monkeypatch.setattr(launcher, "smoke_test", lambda: calls.append("smoke"))
+    monkeypatch.setattr(zotero_daily.sys, "argv", ["launcher", "--smoke-test"])
+
+    zotero_daily.main()
+
+    assert calls == ["smoke"]

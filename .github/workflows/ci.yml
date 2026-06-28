@@ -77,6 +77,7 @@ jobs:
           fi
           "$APP_PATH/Contents/MacOS/launcher" --help >/tmp/zotero-daily-news-help.txt
           grep -q "Zotero" /tmp/zotero-daily-news-help.txt
+          "$APP_PATH/Contents/MacOS/launcher" --smoke-test
           hdiutil detach "$MOUNT_DIR" -quiet
           trap - EXIT
       - uses: actions/upload-artifact@v4

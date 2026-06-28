@@ -7,6 +7,11 @@ import sys
 
 
 def main() -> None:
+    if "--smoke-test" in sys.argv[1:]:
+        from .launcher import smoke_test
+
+        smoke_test()
+        return
     if "--open-target" in sys.argv[1:]:
         from .notifier import _cli_open_target
 
