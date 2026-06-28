@@ -65,8 +65,10 @@ def load_queue() -> dict[str, Any] | None:
 
 def save_queue(queue: dict[str, Any]) -> None:
     QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with QUEUE_PATH.open("w", encoding="utf-8") as f:
+    tmp_path = QUEUE_PATH.with_name(f"{QUEUE_PATH.name}.{os.getpid()}.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
         json.dump(queue, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(QUEUE_PATH)
 
 
 def queue_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -376,10 +378,15 @@ def push_from_queue(
             if e.get("status") == STATUS_READY and _hub_file_exists(e)
         )
         if ready_count < len(push_window):
-            prepare_queue()
+            queue, _ = prepare_queue()
+        else:
+            reloaded = load_queue()
+            if reloaded:
+                queue = reloaded
 
-    queue = load_queue()
-    assert queue is not None
+    if not queue or not queue.get("items"):
+        print("待推清单读取失败，请重新生成待推清单后再推送", file=sys.stderr)
+        return 1
 
     candidates: list[dict[str, Any]] = []
     for entry in queue["items"]:

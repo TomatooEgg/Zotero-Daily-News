@@ -39,3 +39,80 @@ def test_push_queue_does_not_retry_failed_deep_read(monkeypatch, tmp_path):
 
     assert queue_manager.push_from_queue(no_notify=True) == 0
     assert notifications
+
+
+def test_push_queue_uses_prepare_result_when_reload_fails(monkeypatch, tmp_path):
+    from zotero_daily_news import digest, queue_manager
+
+    hub = tmp_path / "news.html"
+    hub.write_text("<h1>News</h1>", encoding="utf-8")
+    initial_queue = {
+        "items": [
+            {
+                "item_key": "ITEM1",
+                "title": "Paper",
+                "authors": "Author",
+                "has_pdf": False,
+                "status": queue_manager.STATUS_PENDING,
+                "deep_read": queue_manager.DEEP_SKIPPED,
+                "note_id": None,
+                "hub_path": None,
+                "briefing": None,
+            }
+        ]
+    }
+    prepared_queue = {
+        "items": [
+            {
+                **initial_queue["items"][0],
+                "status": queue_manager.STATUS_READY,
+                "note_id": "20260628_ITEM1_news",
+                "hub_path": str(hub),
+                "briefing": "Briefing",
+            }
+        ]
+    }
+    load_results = [initial_queue, None]
+    notifications = []
+
+    monkeypatch.setattr(
+        queue_manager,
+        "queue_settings",
+        lambda config=None: {"push_count": 1, "pre_generate_deep_read": True},
+    )
+    monkeypatch.setattr(queue_manager, "load_config", lambda: {})
+    monkeypatch.setattr(queue_manager, "load_queue", lambda: load_results.pop(0) if load_results else None)
+    monkeypatch.setattr(queue_manager, "prepare_queue", lambda: (prepared_queue, 1))
+    monkeypatch.setattr(queue_manager, "save_queue", lambda q: None)
+    monkeypatch.setattr(digest, "load_history", lambda: {})
+    monkeypatch.setattr(digest, "record_pushed", lambda *args, **kwargs: None)
+    monkeypatch.setattr(digest, "emit_notification", lambda **kwargs: notifications.append(kwargs))
+
+    assert queue_manager.push_from_queue(no_notify=True) == 0
+    assert notifications
+
+
+def test_push_queue_reports_reload_failure_without_assert(monkeypatch):
+    from zotero_daily_news import queue_manager
+
+    queue = {
+        "items": [
+            {
+                "item_key": "ITEM1",
+                "status": queue_manager.STATUS_READY,
+                "hub_path": "",
+            }
+        ]
+    }
+    load_results = [queue, None]
+
+    monkeypatch.setattr(
+        queue_manager,
+        "queue_settings",
+        lambda config=None: {"push_count": 1, "pre_generate_deep_read": True},
+    )
+    monkeypatch.setattr(queue_manager, "load_config", lambda: {})
+    monkeypatch.setattr(queue_manager, "load_queue", lambda: load_results.pop(0) if load_results else None)
+    monkeypatch.setattr(queue_manager, "prepare_queue", lambda: (None, 0))
+
+    assert queue_manager.push_from_queue(no_notify=True) == 1
