@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 import threading
@@ -80,13 +81,19 @@ def main() -> None:
     state: dict[str, Any] = {
         "window": None,
         "pending_note_id": pending_note_id,
+        "pending_nav": None,
         "warm": False,
+        "http_server": None,
+        "shutting_down": False,
     }
 
-    def navigate_in_window(note_id: str, *, activate: bool = True) -> bool:
+    def navigate_in_window(note_id: str, *, activate: bool = True) -> tuple[bool, bool]:
+        if state.get("shutting_down"):
+            return False, False
         window = state.get("window")
-        if window is None:
-            return False
+        if window is None or not state.get("warm"):
+            state["pending_nav"] = (note_id, activate)
+            return False, True
         js = (
             "(function(){"
             f" if (typeof navigateToNote === 'function') {{ navigateToNote({json.dumps(note_id)}); return true; }}"
@@ -96,22 +103,41 @@ def main() -> None:
         try:
             if window.evaluate_js(js):
                 _show_window(window, activate=activate)
-                return True
+                return True, False
         except Exception:
             pass
         window.load_url(f"{base_url}{note_path(note_id)}")
         _show_window(window, activate=activate)
-        return True
+        return True, False
+
+    def flush_pending_navigation() -> None:
+        pending = state.pop("pending_nav", None)
+        if pending:
+            note_id, activate = pending
+            navigate_in_window(note_id, activate=activate)
 
     def open_note(note_id: str, *, activate: bool = False) -> None:
         state["pending_note_id"] = note_id
-        if not navigate_in_window(note_id, activate=activate):
-            return
+        navigate_in_window(note_id, activate=activate)
 
     def show_from_user() -> None:
         window = state.get("window")
         if window is not None:
             _show_window(window, activate=True)
+
+    def shutdown_services() -> None:
+        if state.get("shutting_down"):
+            return
+        state["shutting_down"] = True
+        state["warm"] = False
+        set_navigate_to_note(None)
+        set_yield_focus(None)
+        server = state.get("http_server")
+        if server is not None:
+            try:
+                server.shutdown()
+            except Exception:
+                pass
 
     set_navigate_to_note(navigate_in_window)
 
@@ -127,7 +153,11 @@ def main() -> None:
     set_yield_focus(yield_focus)
 
     def run_flask() -> None:
-        app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
+        from werkzeug.serving import make_server
+
+        server = make_server("127.0.0.1", PORT, app, threaded=True)
+        state["http_server"] = server
+        server.serve_forever()
 
     if not _port_free(PORT):
         print(f"复用已在运行的服务: {base_url}", file=sys.stderr)
@@ -146,7 +176,12 @@ def main() -> None:
 
     def on_gui_ready() -> None:
         state["warm"] = True
-        chain_macos_app_handlers(on_note=open_note, on_reopen=show_from_user)
+        chain_macos_app_handlers(
+            on_note=open_note,
+            on_reopen=show_from_user,
+            on_quit=shutdown_services,
+        )
+        flush_pending_navigation()
         if deeplink_background:
             schedule_deeplink_focus_release()
         elif deeplink_activate:
@@ -174,6 +209,11 @@ def main() -> None:
     except ImportError:
         import webbrowser
 
+        def browser_navigate(note_id: str, *, activate: bool = True) -> tuple[bool, bool]:
+            webbrowser.open(f"{base_url}{note_path(note_id)}")
+            return True, False
+
+        set_navigate_to_note(browser_navigate)
         webbrowser.open(f"{base_url}{initial_path}")
         print(f"已打开浏览器: {base_url}{initial_path}")
         print("安装 pywebview 可获得原生窗口: pip install pywebview")
@@ -182,6 +222,9 @@ def main() -> None:
                 time.sleep(3600)
         except KeyboardInterrupt:
             pass
+    finally:
+        shutdown_services()
+        os._exit(0)
 
 
 if __name__ == "__main__":

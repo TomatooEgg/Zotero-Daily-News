@@ -6,16 +6,29 @@ import json
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from config_manager import load_config
+from config_manager import load_config, resolve_output_dirs
+from macos_window import open_deeplink_url
 from net_env import ensure_local_no_proxy
 
 DEEPLINK_SCHEME = "zotero-digest"
+NOTIFY_LOG = Path.home() / "Library/Application Support/Zotero Digest/notify.log"
+
+
+def _notify_log(message: str) -> None:
+    try:
+        NOTIFY_LOG.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with NOTIFY_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(f"{stamp} {message}\n")
+    except OSError:
+        pass
 
 
 def digest_app_port() -> int:
@@ -31,6 +44,27 @@ def is_digest_app_running(port: int | None = None) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.3)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def is_digest_app_navigable(port: int | None = None) -> bool:
+    """端口已开且 pywebview 桥接已注册（Cmd+Q 后仅剩僵尸 Flask 时为 False）。"""
+    if not is_digest_app_running(port):
+        return False
+    ensure_local_no_proxy()
+    base = digest_app_base_url() if port is None else f"http://127.0.0.1:{port}"
+    req = urllib.request.Request(f"{base}/api/app-ready", method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            return resp.status == 200 and bool(body.get("ok")) and bool(body.get("ready"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return False
+
+
+def _navigate_api_success(body: dict) -> bool:
+    return bool(body.get("ok")) and (
+        bool(body.get("navigated")) or bool(body.get("queued"))
+    )
 
 
 def navigate_to_note_in_app(note_id: str, *, activate: bool = True, port: int | None = None) -> bool:
@@ -49,17 +83,59 @@ def navigate_to_note_in_app(note_id: str, *, activate: bool = True, port: int | 
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             body = json.loads(resp.read().decode("utf-8"))
-            return resp.status == 200 and bool(body.get("ok")) and bool(body.get("navigated"))
+            return resp.status == 200 and _navigate_api_success(body)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         return False
 
 
+def navigate_to_note_in_app_with_retry(
+    note_id: str,
+    *,
+    activate: bool = True,
+    port: int | None = None,
+    attempts: int = 5,
+    delay: float = 0.3,
+) -> bool:
+    """App 已开时重试导航，覆盖 Flask 已起但 pywebview 未 warm 的竞态。"""
+    for attempt in range(attempts):
+        if navigate_to_note_in_app(note_id, activate=activate, port=port):
+            return True
+        if not is_digest_app_running(port):
+            return False
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+    return False
+
+
+def resolve_hub_path(note_id: str) -> Path | None:
+    """按 note_id 查找 hub 静态页（通知 execute 未带 --hub 时使用）。"""
+    if not note_id:
+        return None
+    _, hubs_dir = resolve_output_dirs(load_config())
+    hub = hubs_dir / f"{note_id}.html"
+    return hub if hub.is_file() else None
+
+
 def open_notify_target(note_id: str, hub_path: Path | None = None) -> None:
-    """通知点击目标：App 已开则跳转条目，否则打开 hub 中转页。"""
-    if note_id and navigate_to_note_in_app(note_id, activate=True):
+    """通知点击目标：App 已开且可导航则跳转条目，否则打开 hub 中转页。"""
+    hub = hub_path if hub_path and hub_path.is_file() else resolve_hub_path(note_id)
+    navigable = bool(note_id and is_digest_app_navigable())
+    _notify_log(
+        f"open note_id={note_id!r} hub={hub} navigable={navigable} "
+        f"port_open={is_digest_app_running()}"
+    )
+    if navigable:
+        if navigate_to_note_in_app_with_retry(note_id, activate=True):
+            _notify_log("navigated in app")
+            return
+        open_deeplink_url(deeplink_for_note(note_id, activate=True))
+        _notify_log("deeplink fallback")
         return
-    if hub_path and hub_path.exists():
-        subprocess.run(["open", str(hub_path.resolve())], check=False)
+    if hub:
+        subprocess.run(["open", str(hub.resolve())], check=False)
+        _notify_log(f"opened hub {hub}")
+    else:
+        _notify_log("no hub to open")
 
 
 def parse_deeplink(url: str) -> str | None:
@@ -101,7 +177,7 @@ def open_digest_app_for_note(note_id: str) -> bool:
         return False
     if navigate_to_note_in_app(note_id, activate=True):
         return True
-    subprocess.run(["open", deeplink_for_note(note_id, activate=True)], check=False)
+    open_deeplink_url(deeplink_for_note(note_id, activate=True))
     return True
 
 

@@ -189,13 +189,20 @@ cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
 </plist>
 LINK_PLIST
 
-# 注册深链接到 Link 中转（避免 dist 旧包占用 scheme）
+# 注册深链接到 Link 中转（避免 dist / 本地 dev 旧包占用 scheme）
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-STAGE_APP="$PROJECT_DIR/dist/stage/Zotero 简报.app"
-if [[ -x "$LSREGISTER" ]]; then
-  if [[ -d "$STAGE_APP" ]]; then
-    "$LSREGISTER" -u "$STAGE_APP" 2>/dev/null || true
+unregister_link_handler() {
+  local app_path="$1"
+  if [[ -d "$app_path" ]]; then
+    "$LSREGISTER" -u "$app_path" 2>/dev/null || true
+    echo "    已注销: $app_path"
   fi
+}
+if [[ -x "$LSREGISTER" ]]; then
+  unregister_link_handler "$PROJECT_DIR/Zotero 简报.app"
+  unregister_link_handler "$PROJECT_DIR/$LINK_APP_NAME"
+  unregister_link_handler "$PROJECT_DIR/new app/Zotero Digest Link_new.app"
+  unregister_link_handler "/Applications/Zotero Digest Link_new.app"
   "$LSREGISTER" -f "$APP_DIR" 2>/dev/null || true
   "$LSREGISTER" -f "$LINK_DIR" 2>/dev/null || true
 fi

@@ -129,8 +129,8 @@ cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
     <key>CFBundleName</key><string>Zotero Digest Link</string>
     <key>CFBundleDisplayName</key><string>Zotero Digest Link</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>1.2</string>
+    <key>CFBundleVersion</key><string>4</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><true/>
@@ -146,16 +146,25 @@ cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
 </plist>
 LINK_PLIST
 
-# 注册深链接到 Link 中转（先注销 dist 旧包，避免仍占用 zotero-digest://）
+# 注册深链接到 Link 中转（先注销其它同名 handler，避免 hub 误路由到 _new / dist 包）
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-STAGE_APP="$PROJECT_DIR/dist/stage/Zotero 简报.app"
-if [[ -x "$LSREGISTER" ]]; then
-  if [[ -d "$STAGE_APP" ]]; then
-    "$LSREGISTER" -u "$STAGE_APP" 2>/dev/null || true
-    echo "    已注销 dist/stage 深链接；若 hub 仍无反应可: rm -rf dist/stage"
+unregister_link_handler() {
+  local app_path="$1"
+  if [[ -d "$app_path" ]]; then
+    "$LSREGISTER" -u "$app_path" 2>/dev/null || true
+    echo "    已注销: $app_path"
   fi
+}
+if [[ -x "$LSREGISTER" ]]; then
+  unregister_link_handler "$PROJECT_DIR/dist/stage/Zotero 简报.app"
+  unregister_link_handler "$PROJECT_DIR/dist/stage/$LINK_APP_NAME"
+  unregister_link_handler "$PROJECT_DIR/new app/Zotero Digest Link_new.app"
+  unregister_link_handler "$PROJECT_DIR/new/$LINK_APP_NAME"
+  unregister_link_handler "/Applications/Zotero Digest Link_new.app"
+  unregister_link_handler "/Applications/$LINK_APP_NAME"
   "$LSREGISTER" -f "$APP_DIR" 2>/dev/null || true
   "$LSREGISTER" -f "$LINK_DIR" 2>/dev/null || true
+  echo "    已注册本地深链接: $LINK_DIR"
 fi
 
 # 可选：链到桌面（-n 避免目标已是目录 symlink 时在 .app 包内再嵌一层）

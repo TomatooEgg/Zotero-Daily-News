@@ -19,7 +19,7 @@ from notes_index import delete_note, delete_notes, delete_notes_by_date, get_not
 from note_view import prepare_note_view_context, render_note_view_html
 from notifier import notify_macos, parse_notify_stdout
 from push_finalize import apply_push_results
-from app_bridge import navigate_to_note, yield_focus_to_external_app
+from app_bridge import is_bridge_registered, navigate_to_note, yield_focus_to_external_app
 from url_handler import open_digest_app_for_note
 from zotero_credentials import save_zotero_credentials, test_zotero_connection, zotero_config_for_ui
 from zotero_open import open_zotero_deeplink
@@ -223,6 +223,11 @@ def reveal_in_finder(path: Path) -> tuple[bool, str]:
 ALLOWED_OPEN_SCHEMES = ("zotero://", "zotero-digest://")
 
 
+@app.get("/api/app-ready")
+def api_app_ready():
+    return jsonify({"ok": True, "ready": is_bridge_registered()})
+
+
 @app.post("/api/navigate")
 def api_navigate():
     data = request.get_json(silent=True) or {}
@@ -232,8 +237,10 @@ def api_navigate():
     if not get_note(note_id):
         return jsonify({"error": "笔记不存在"}), 404
     activate = bool(data.get("activate", True))
-    navigated = navigate_to_note(note_id, activate=activate)
-    return jsonify({"ok": True, "navigated": navigated, "note_id": note_id})
+    navigated, queued = navigate_to_note(note_id, activate=activate)
+    return jsonify(
+        {"ok": True, "navigated": navigated, "queued": queued, "note_id": note_id}
+    )
 
 
 @app.post("/api/open-digest-app")
@@ -244,7 +251,8 @@ def api_open_digest_app():
         return jsonify({"error": "缺少 note_id"}), 400
     if not get_note(note_id):
         return jsonify({"error": "笔记不存在"}), 404
-    if navigate_to_note(note_id, activate=True):
+    navigated, queued = navigate_to_note(note_id, activate=True)
+    if navigated or queued:
         return jsonify({"ok": True, "mode": "navigate", "note_id": note_id})
     open_digest_app_for_note(note_id)
     return jsonify({"ok": True, "mode": "launch", "note_id": note_id})

@@ -9,9 +9,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SUPPORT_DIR = Path.home() / "Library/Application Support/Zotero Digest"
+ALERTER_WORKER_LOG = SUPPORT_DIR / "alerter-worker.log"
 LOCAL_NOTIFIER = SCRIPT_DIR / "bin" / "terminal-notifier"
 LOCAL_ALERTER = SCRIPT_DIR / "bin" / "alerter"
 NOTIFY_PREFIX = "@@NOTIFY@@"
@@ -138,37 +141,46 @@ def _resolve_note_id(note_id: str | None, hub_path: Path | None) -> str | None:
     return None
 
 
-def _terminal_notifier_execute_cmd(note_id: str) -> str:
+def _project_python() -> str:
     venv_py = SCRIPT_DIR / ".venv" / "bin" / "python"
-    py = str(venv_py if venv_py.exists() else (shutil.which("python3") or "python3"))
+    return str(venv_py if venv_py.exists() else (shutil.which("python3") or "python3"))
+
+
+def _terminal_notifier_execute_cmd(note_id: str, hub_path: Path | None = None) -> str:
+    py = _project_python()
+    hub_arg = ""
+    if hub_path and hub_path.is_file():
+        hub_arg = f" --hub {shlex.quote(str(hub_path.resolve()))}"
     inner = (
         f"cd {shlex.quote(str(SCRIPT_DIR))} && "
         f"NO_PROXY=127.0.0.1,localhost,::1 "
         f"{shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} "
-        f"--open-target {shlex.quote(note_id)}"
+        f"--open-target {shlex.quote(note_id)}{hub_arg}"
     )
     try:
         import subprocess as sp
 
         if sp.run(["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True).stdout.strip() == "1":
-            return f"cd {shlex.quote(str(SCRIPT_DIR))} && NO_PROXY=127.0.0.1,localhost,::1 arch -arm64 {shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} --open-target {shlex.quote(note_id)}"
+            return f"cd {shlex.quote(str(SCRIPT_DIR))} && NO_PROXY=127.0.0.1,localhost,::1 arch -arm64 {shlex.quote(py)} {shlex.quote(str(SCRIPT_DIR / 'notifier.py'))} --open-target {shlex.quote(note_id)}{hub_arg}"
     except OSError:
         pass
     return inner
 
 
 def _open_notify_target(note_id: str | None, hub_path: Path | None) -> None:
-    from url_handler import open_notify_target
+    from url_handler import open_notify_target, resolve_hub_path
 
     resolved = _resolve_note_id(note_id, hub_path)
     if not resolved:
         if hub_path and hub_path.exists():
             subprocess.run(["open", str(hub_path.resolve())], check=False)
         return
+    if not hub_path or not hub_path.is_file():
+        hub_path = resolve_hub_path(resolved)
     open_notify_target(resolved, hub_path)
 
 
-def _notify_alerter(
+def _notify_alerter_sync(
     binary: Path,
     title: str,
     message: str,
@@ -210,6 +222,120 @@ def _notify_alerter(
     if hub_path.exists() and is_publish_action(action):
         _open_notify_target(note_id, hub_path)
     return action
+
+
+def _spawn_alerter_worker(
+    title: str,
+    message: str,
+    subtitle: str,
+    hub_path: Path,
+    *,
+    note_id: str | None = None,
+    verbose: bool = False,
+) -> bool:
+    """独立进程等待 alerter 点击，避免 App Cmd+Q 后通知 handler 失效。"""
+    alerter = _resolve_alerter()
+    if not alerter or not hub_path.is_file():
+        return False
+    cmd = [
+        _project_python(),
+        str(SCRIPT_DIR / "notifier.py"),
+        "--alerter-worker",
+        "--title",
+        title,
+        "--message",
+        message,
+        "--hub",
+        str(hub_path.resolve()),
+    ]
+    if subtitle:
+        cmd.extend(["--subtitle", subtitle])
+    if note_id:
+        cmd.extend(["--note-id", note_id])
+    if verbose:
+        cmd.append("--verbose")
+    try:
+        SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
+        logf = ALERTER_WORKER_LOG.open("a", encoding="utf-8")
+        logf.write(f"\n--- spawn {datetime.now():%Y-%m-%d %H:%M:%S} note={note_id} ---\n")
+        logf.flush()
+        env = os.environ.copy()
+        env["NO_PROXY"] = "127.0.0.1,localhost,::1"
+        launch = cmd
+        try:
+            if (
+                subprocess.run(
+                    ["sysctl", "-n", "hw.optional.arm64"],
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                == "1"
+            ):
+                launch = ["arch", "-arm64", *cmd]
+        except OSError:
+            pass
+        subprocess.Popen(
+            launch,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            cwd=str(SCRIPT_DIR),
+            env=env,
+            close_fds=False,
+        )
+        return True
+    except OSError as exc:
+        if verbose:
+            print(f"[alerter-worker] spawn failed: {exc}", file=sys.stderr)
+        return False
+
+
+def _run_alerter_worker_cli() -> int:
+    title = message = subtitle = note_id = ""
+    hub_path: Path | None = None
+    verbose = False
+    args = sys.argv[2:]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--title" and i + 1 < len(args):
+            title, i = args[i + 1], i + 2
+            continue
+        if arg == "--message" and i + 1 < len(args):
+            message, i = args[i + 1], i + 2
+            continue
+        if arg == "--subtitle" and i + 1 < len(args):
+            subtitle, i = args[i + 1], i + 2
+            continue
+        if arg == "--hub" and i + 1 < len(args):
+            hub_path = Path(args[i + 1])
+            i += 2
+            continue
+        if arg == "--note-id" and i + 1 < len(args):
+            note_id, i = args[i + 1], i + 2
+            continue
+        if arg == "--verbose":
+            verbose = True
+            i += 1
+            continue
+        i += 1
+    if not title or not message or not hub_path:
+        print("用法: notifier.py --alerter-worker --title ... --message ... --hub path", file=sys.stderr)
+        return 1
+    alerter = _resolve_alerter()
+    if not alerter:
+        print("alerter 未找到", file=sys.stderr)
+        return 1
+    _notify_alerter_sync(
+        alerter,
+        title,
+        message,
+        subtitle,
+        hub_path,
+        verbose,
+        note_id=note_id or None,
+    )
+    return 0
 
 
 def _escape_applescript(text: str) -> str:
@@ -329,17 +455,23 @@ def notify_macos(
     if verbose:
         print(f"[notify] sender={sender} alerter={alerter} binary={binary}", file=sys.stderr)
 
-    # 1) alerter（带「查看总结」「下次再推」操作按钮）
+    # 1) alerter（独立 worker 等待点击，App Cmd+Q 后仍有效）
     if alerter and hub_path and hub_path.exists():
-        action = _notify_alerter(
-            alerter, title, message, subtitle, hub_path, verbose, note_id=resolved_note_id
-        )
-        if action is not None:
-            return True, action
+        if _spawn_alerter_worker(
+            title,
+            message,
+            subtitle,
+            hub_path,
+            note_id=resolved_note_id,
+            verbose=verbose,
+        ):
+            return True, IMMEDIATE_PUBLISH_ACTION
 
     # 2) terminal-notifier（点击通知正文跳转；无推迟按钮，视为立即发布）
     if binary:
-        execute_cmd = _terminal_notifier_execute_cmd(resolved_note_id) if resolved_note_id else None
+        execute_cmd = (
+            _terminal_notifier_execute_cmd(resolved_note_id, hub_path) if resolved_note_id else None
+        )
         if execute_cmd and _notify_terminal_notifier(
             binary, title, message, subtitle, None, sender, verbose, execute=execute_cmd
         ):
@@ -410,6 +542,8 @@ def _cli_open_target() -> int:
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--open-target":
         raise SystemExit(_cli_open_target())
+    if len(sys.argv) >= 2 and sys.argv[1] == "--alerter-worker":
+        raise SystemExit(_run_alerter_worker_cli())
     if len(sys.argv) >= 2 and sys.argv[1] == "--diagnose":
         diagnose()
         raise SystemExit(0)
