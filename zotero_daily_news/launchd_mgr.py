@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 
 from .config_manager import SCRIPT_DIR, load_config, logs_dir, runtime_path
@@ -58,9 +59,13 @@ def _prepare_intervals(config: dict) -> list[dict[str, int]]:
 def build_plist(config: dict | None = None) -> dict:
     config = config or load_config()
     project = str(SCRIPT_DIR)
+    if getattr(sys, "frozen", False):
+        program_args = [sys.executable, "--push-queue"]
+    else:
+        program_args = ["/bin/bash", f"{project}/run.sh", "--push-queue"]
     return {
         "Label": PLIST_LABEL,
-        "ProgramArguments": ["/bin/bash", f"{project}/run.sh", "--push-queue"],
+        "ProgramArguments": program_args,
         "WorkingDirectory": project,
         "EnvironmentVariables": _env_block(),
         "StartCalendarInterval": _schedule_intervals(config),
@@ -72,9 +77,14 @@ def build_plist(config: dict | None = None) -> dict:
 def build_prepare_plist(config: dict | None = None) -> dict:
     config = config or load_config()
     project = str(SCRIPT_DIR)
+    program_args = (
+        [sys.executable, "--refresh-queue", "--prepare-queue"]
+        if getattr(sys, "frozen", False)
+        else ["/bin/bash", f"{project}/prepare_queue.sh"]
+    )
     return {
         "Label": PLIST_PREPARE_LABEL,
-        "ProgramArguments": ["/bin/bash", f"{project}/prepare_queue.sh"],
+        "ProgramArguments": program_args,
         "WorkingDirectory": project,
         "EnvironmentVariables": _env_block(),
         "StartCalendarInterval": _prepare_intervals(config),

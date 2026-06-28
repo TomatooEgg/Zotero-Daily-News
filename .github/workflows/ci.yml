@@ -64,9 +64,21 @@ jobs:
           hdiutil verify "$DMG"
           MOUNT_DIR="$(mktemp -d)"
           hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -quiet
-          test -d "$MOUNT_DIR/Zotero 简报.app"
-          test -x "$MOUNT_DIR/Zotero 简报.app/Contents/MacOS/launcher"
+          trap 'hdiutil detach "$MOUNT_DIR" -quiet || true' EXIT
+          APP_PATH="$MOUNT_DIR/Zotero 简报.app"
+          test -d "$APP_PATH"
+          test -x "$APP_PATH/Contents/MacOS/launcher"
+          test -x "$APP_PATH/Contents/Resources/runtime/launcher"
+          test ! -d "$APP_PATH/Contents/Resources/app/.venv"
+          BROKEN_LINK="$(find "$APP_PATH" -type l ! -exec test -e {} \; -print -quit)"
+          if [ -n "$BROKEN_LINK" ]; then
+            echo "Broken symlink in app bundle: $BROKEN_LINK" >&2
+            exit 1
+          fi
+          "$APP_PATH/Contents/MacOS/launcher" --help >/tmp/zotero-daily-news-help.txt
+          grep -q "Zotero" /tmp/zotero-daily-news-help.txt
           hdiutil detach "$MOUNT_DIR" -quiet
+          trap - EXIT
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg

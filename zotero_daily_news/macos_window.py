@@ -19,6 +19,11 @@ _cold_start_frontmost_app: str | None = None
 
 
 def digest_app_bundle_path() -> Path:
+    if getattr(sys, "frozen", False):
+        executable = Path(sys.executable).resolve()
+        for parent in executable.parents:
+            if parent.name.endswith(".app"):
+                return parent
     return SCRIPT_DIR / "Zotero 简报.app"
 
 

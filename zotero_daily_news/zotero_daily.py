@@ -7,6 +7,16 @@ import sys
 
 
 def main() -> None:
+    if "--open-target" in sys.argv[1:]:
+        from .notifier import _cli_open_target
+
+        raise SystemExit(_cli_open_target())
+    if "--digest-link-handler" in sys.argv[1:]:
+        sys.argv = [sys.argv[0], *[arg for arg in sys.argv[1:] if arg != "--digest-link-handler"]]
+        from .digest_link_handler import main as link_main
+
+        link_main()
+        return
     if "--serve-only" in sys.argv[1:]:
         from .app import app
         from .launcher import PORT

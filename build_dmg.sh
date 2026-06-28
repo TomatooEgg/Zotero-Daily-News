@@ -6,50 +6,41 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Zotero 简报.app"
 LINK_APP_NAME="Zotero Digest Link.app"
 ARCH="${ZOTERO_DAILY_NEWS_MAC_ARCH:-$(uname -m)}"
+BUILD_VENV="$PROJECT_DIR/.build-macos-venv"
+BUILD_PYTHON="$BUILD_VENV/bin/python"
+BUILD_EXE="$PROJECT_DIR/build/macos-exe"
 STAGE="$PROJECT_DIR/dist/stage"
 APP_DIR="$STAGE/$APP_NAME"
 LINK_DIR="$STAGE/$LINK_APP_NAME"
-BUNDLE_APP="$APP_DIR/Contents/Resources/app"
+RUNTIME_DIR="$APP_DIR/Contents/Resources/runtime"
 DMG_NAME="Zotero-Daily-News-macOS-${ARCH}.dmg"
 DMG_PATH="$PROJECT_DIR/dist/$DMG_NAME"
 
 echo "==> Preparing staging directory"
-rm -rf "$STAGE"
-mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
+rm -rf "$STAGE" "$BUILD_EXE"
+mkdir -p "$RUNTIME_DIR" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
   "$LINK_DIR/Contents/MacOS" "$LINK_DIR/Contents/Resources"
 ln -s /Applications "$STAGE/Applications"
 
-echo "==> Copying project files"
-rsync -a \
-  --exclude '.git/' \
-  --exclude '.venv/' \
-  --exclude 'dist/' \
-  --exclude 'summaries/' \
-  --exclude 'hubs/' \
-  --exclude 'logs/' \
-  --exclude 'bin/' \
-  --exclude 'Zotero 简报.app/' \
-  --exclude 'Zotero Digest Link.app/' \
-  --exclude '.env' \
-  --exclude 'history.json' \
-  --exclude 'queue.json' \
-  --exclude 'pending_publish.json' \
-  --exclude 'com.*.zotero-digest*.plist' \
-  --exclude '__pycache__/' \
-  --exclude '.DS_Store' \
-  --exclude '.cursor/' \
-  "$PROJECT_DIR/" "$BUNDLE_APP/"
+echo "==> Installing build dependencies"
+if [[ ! -x "$BUILD_PYTHON" ]]; then
+  python3 -m venv "$BUILD_VENV"
+fi
+"$BUILD_PYTHON" -m pip install --upgrade pip -q
+"$BUILD_PYTHON" -m pip install -r "$PROJECT_DIR/requirements.txt" -q
+"$BUILD_PYTHON" -m pip install "cx_Freeze>=7.2" -q
 
-mkdir -p "$BUNDLE_APP/summaries" "$BUNDLE_APP/hubs" "$BUNDLE_APP/logs" "$BUNDLE_APP/bin"
-
-echo "==> Creating virtual environment and installing dependencies"
-python3 -m venv "$BUNDLE_APP/.venv"
-"$BUNDLE_APP/.venv/bin/pip" install --upgrade pip -q
-"$BUNDLE_APP/.venv/bin/pip" install -r "$BUNDLE_APP/requirements.txt" -q
+echo "==> Freezing Python runtime"
+(
+  cd "$PROJECT_DIR"
+  ZDN_MACOS_BUILD_EXE="$BUILD_EXE" "$BUILD_PYTHON" setup_macos.py build_exe
+)
+rsync -a "$BUILD_EXE/" "$RUNTIME_DIR/"
+mkdir -p "$RUNTIME_DIR/bin"
 
 install_binary() {
   local name="$1"
-  local dest="$BUNDLE_APP/bin/$name"
+  local dest="$RUNTIME_DIR/bin/$name"
   if [[ -x "$PROJECT_DIR/bin/$name" ]]; then
     cp "$PROJECT_DIR/bin/$name" "$dest"
     chmod +x "$dest"
@@ -76,46 +67,31 @@ echo "==> Copying notification helpers"
 install_binary terminal-notifier
 install_binary alerter
 
-if [[ ! -f "$BUNDLE_APP/.env" ]]; then
-  cp "$BUNDLE_APP/.env.example" "$BUNDLE_APP/.env"
-fi
-
 cat > "$APP_DIR/Contents/MacOS/launcher" << 'LAUNCHER'
 #!/bin/bash
 BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
-if [[ -d "$BUNDLE/Contents/Resources/app" ]]; then
-  PROJECT="$BUNDLE/Contents/Resources/app"
-else
-  PROJECT="$(cat "$BUNDLE/Contents/Resources/project.path" 2>/dev/null || dirname "$BUNDLE")"
-fi
-cd "$PROJECT" || exit 1
-PYTHON="$PROJECT/.venv/bin/python"
+RUNTIME="$BUNDLE/Contents/Resources/runtime"
+EXECUTABLE="$RUNTIME/launcher"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
+cd "$RUNTIME" || exit 1
 if [ "$#" -gt 0 ]; then
   mkdir -p "$SUPPORT_DIR"
   osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
     > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
 fi
-if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" -m zotero_daily_news.launcher "$@"
-else
-  exec "$PYTHON" -m zotero_daily_news.launcher "$@"
-fi
+exec "$EXECUTABLE" "$@"
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
 
 cat > "$LINK_DIR/Contents/MacOS/launcher" << 'LINK_LAUNCHER'
 #!/bin/bash
 BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
-if [[ -d "$BUNDLE/../Zotero 简报.app/Contents/Resources/app" ]]; then
-  PROJECT="$BUNDLE/../Zotero 简报.app/Contents/Resources/app"
+if [[ -d "$BUNDLE/../Zotero 简报.app/Contents/Resources/runtime" ]]; then
   MAIN_APP="$BUNDLE/../Zotero 简报.app"
 else
-  PROJECT="$(cat "$BUNDLE/Contents/Resources/project.path" 2>/dev/null || dirname "$BUNDLE")"
-  MAIN_APP="$PROJECT/Zotero 简报.app"
+  MAIN_APP="$(cat "$BUNDLE/Contents/Resources/main_app.path" 2>/dev/null || dirname "$BUNDLE")/Zotero 简报.app"
 fi
-cd "$PROJECT" || exit 1
-PYTHON="$PROJECT/.venv/bin/python"
+EXECUTABLE="$MAIN_APP/Contents/Resources/runtime/launcher"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
 mkdir -p "$SUPPORT_DIR"
 osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
@@ -133,14 +109,13 @@ for arg in "$@"; do
       ;;
   esac
 done
-if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" -m zotero_daily_news.digest_link_handler "$@"
-else
-  exec "$PYTHON" -m zotero_daily_news.digest_link_handler "$@"
+if [[ -x "$EXECUTABLE" ]]; then
+  exec "$EXECUTABLE" --digest-link-handler "$@"
 fi
+exit 0
 LINK_LAUNCHER
 chmod +x "$LINK_DIR/Contents/MacOS/launcher"
-echo "$BUNDLE_APP" > "$LINK_DIR/Contents/Resources/project.path"
+echo "$(dirname "$APP_DIR")" > "$LINK_DIR/Contents/Resources/main_app.path"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -154,7 +129,7 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key><string>Zotero 简报</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><false/>
@@ -175,7 +150,7 @@ cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
     <key>CFBundleDisplayName</key><string>Zotero Digest Link</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><true/>

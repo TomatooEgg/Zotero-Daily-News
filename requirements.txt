@@ -9,3 +9,6 @@ bleach>=6.1.0
 sgmllib3k>=1.0.0
 pystray>=0.19.5
 Pillow>=10.0.0
+pyobjc-core>=10.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+pyobjc-framework-WebKit>=10.0; sys_platform == "darwin"

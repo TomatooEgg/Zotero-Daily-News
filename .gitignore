@@ -4,6 +4,7 @@
 config.yaml
 .venv/
 .build-venv/
+.build-macos-venv/
 
 # 运行时生成
 summaries/

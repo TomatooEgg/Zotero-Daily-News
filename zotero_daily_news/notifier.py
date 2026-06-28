@@ -142,6 +142,12 @@ def _resolve_note_id(note_id: str | None, hub_path: Path | None) -> str | None:
 
 
 def _terminal_notifier_execute_cmd(note_id: str) -> str:
+    if getattr(sys, "frozen", False):
+        return (
+            f"cd {shlex.quote(str(SCRIPT_DIR))} && "
+            f"NO_PROXY=127.0.0.1,localhost,::1 "
+            f"{shlex.quote(sys.executable)} --open-target {shlex.quote(note_id)}"
+        )
     venv_py = SCRIPT_DIR / ".venv" / "bin" / "python"
     py = str(venv_py if venv_py.exists() else (shutil.which("python3") or "python3"))
     inner = (
