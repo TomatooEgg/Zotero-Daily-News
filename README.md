@@ -272,6 +272,8 @@ GitHub Actions 会在 Windows 和 macOS 上运行测试。
 
 macOS DMG 构建完成后会自动校验文件可挂载。
 
+推送版本 tag 时，workflow 会在构建完成后自动创建 GitHub Release，并把 Windows MSI、Windows Portable ZIP 和 macOS DMG 上传为 Release 资产。社区用户可以直接从 [Releases](https://github.com/TomatooEgg/Zotero-Daily-News/releases) 下载发行包。
+
 ## 安全
 
 LLM/Markdown 输出在渲染为 HTML 前会经过清洗。会移除不安全标签、事件属性、`javascript:` URL 和图片，同时保留 Markdown 表格、代码块、Mermaid class、Zotero 链接等必要内容。
