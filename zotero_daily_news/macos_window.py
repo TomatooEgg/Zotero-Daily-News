@@ -27,6 +27,19 @@ def digest_app_bundle_path() -> Path:
     return SCRIPT_DIR / "Zotero 简报.app"
 
 
+def link_app_bundle_path() -> Path:
+    return SCRIPT_DIR / "Zotero Digest Link.app"
+
+
+def open_deeplink_url(url: str) -> None:
+    """经本地 Link.app 打开 zotero-digest://，避免 Launch Services 误路由到 _new 包。"""
+    link = link_app_bundle_path()
+    if link.is_dir():
+        subprocess.run(["open", "-a", str(link.resolve()), url], check=False)
+    else:
+        subprocess.run(["open", url], check=False)
+
+
 def remember_frontmost_app_to_file() -> None:
     """立即把当前前台 App 写入文件（供 Link 中转与冷启动读取）。"""
     if sys.platform != "darwin":
@@ -264,8 +277,9 @@ def schedule_deeplink_focus_release() -> None:
 def chain_macos_app_handlers(
     on_note: Callable[[str], None] | None = None,
     on_reopen: Callable[[], None] | None = None,
+    on_quit: Callable[[], None] | None = None,
 ) -> None:
-    """在 pywebview delegate 上链式挂 deeplink 与 Dock 点击恢复窗口。"""
+    """在 pywebview delegate 上链式挂 deeplink、Dock 点击恢复窗口与 Cmd+Q 退出清理。"""
     if sys.platform != "darwin":
         return
     try:
@@ -289,8 +303,22 @@ def chain_macos_app_handlers(
             self._parent = parent_delegate
             self._on_note = on_note
             self._on_reopen = on_reopen
+            self._on_quit = on_quit
             self._digest_handler_chain = True
             return self
+
+        def applicationShouldTerminate_(self, sender):
+            if self._on_quit:
+                self._on_quit()
+            if self._parent.respondsToSelector_("applicationShouldTerminate:"):
+                return self._parent.applicationShouldTerminate_(sender)
+            return True
+
+        def applicationWillTerminate_(self, notification):
+            if self._on_quit:
+                self._on_quit()
+            if self._parent.respondsToSelector_("applicationWillTerminate:"):
+                self._parent.applicationWillTerminate_(notification)
 
         def application_openURLs_(self, application, urls):
             if self._on_note:

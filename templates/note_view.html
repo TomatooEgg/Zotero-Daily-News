@@ -53,7 +53,7 @@
         var opened = false;
         var hintTimer = setTimeout(function () {
           if (!opened) {
-            alert('若简报未启动，请先在项目目录运行 ./build_app.sh 注册深链接。');
+            alert('若简报未启动，请运行 ./build_app.sh 重新注册深链接（避免误路由到 Zotero Digest Link_new）。');
           }
         }, 2500);
         function goDeeplink() {
