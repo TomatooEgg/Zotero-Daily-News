@@ -442,54 +442,59 @@ def main() -> None:
         help="从待推清单推送（定时任务默认使用）",
     )
     args = parser.parse_args()
-    if args.diagnose_notify:
-        notify_diagnose()
-        sys.exit(0)
-    if args.test_notify:
-        sys.exit(test_notification(verbose=args.verbose_notify))
-    if args.prepare_queue:
-        from .queue_manager import load_queue, prepare_queue, refresh_queue
 
-        if args.refresh_queue or args.force or not load_queue():
+    try:
+        if args.diagnose_notify:
+            notify_diagnose()
+            sys.exit(0)
+        if args.test_notify:
+            sys.exit(test_notification(verbose=args.verbose_notify))
+        if args.prepare_queue:
+            from .queue_manager import load_queue, prepare_queue, refresh_queue
+
+            if args.refresh_queue or args.force or not load_queue():
+                refresh_queue(force=args.force)
+            prepare_queue(skip_llm=args.metadata_only)
+            sys.exit(0)
+        if args.refresh_queue:
+            from .queue_manager import refresh_queue
+
             refresh_queue(force=args.force)
-        prepare_queue(skip_llm=args.metadata_only)
-        sys.exit(0)
-    if args.refresh_queue:
-        from .queue_manager import refresh_queue
+            print("待推清单已刷新")
+            sys.exit(0)
+        if args.push_queue:
+            from .queue_manager import load_queue, prepare_queue, push_from_queue, refresh_queue
 
-        refresh_queue(force=args.force)
-        print("待推清单已刷新")
-        sys.exit(0)
-    if args.push_queue:
-        from .queue_manager import load_queue, prepare_queue, push_from_queue, refresh_queue
-
-        if args.force:
+            if args.force:
+                sys.exit(
+                    run(
+                        dry_run=args.dry_run,
+                        skip_llm=args.metadata_only,
+                        force=True,
+                        no_notify=args.no_notify,
+                    )
+                )
+            if not load_queue():
+                refresh_queue()
+                prepare_queue(skip_llm=args.metadata_only)
             sys.exit(
-                run(
+                push_from_queue(
                     dry_run=args.dry_run,
-                    skip_llm=args.metadata_only,
-                    force=True,
                     no_notify=args.no_notify,
+                    force_prepare=True,
                 )
             )
-        if not load_queue():
-            refresh_queue()
-            prepare_queue(skip_llm=args.metadata_only)
         sys.exit(
-            push_from_queue(
+            run(
                 dry_run=args.dry_run,
+                skip_llm=args.metadata_only,
+                force=args.force,
                 no_notify=args.no_notify,
-                force_prepare=True,
             )
         )
-    sys.exit(
-        run(
-            dry_run=args.dry_run,
-            skip_llm=args.metadata_only,
-            force=args.force,
-            no_notify=args.no_notify,
-        )
-    )
+    except RuntimeError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
