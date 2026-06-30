@@ -9,6 +9,7 @@ import os
 import random
 import re
 import sys
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from .config_manager import (
     build_summary_prompt,
     deepseek_briefing_model,
     load_config,
+    logs_dir,
     resolve_output_dirs,
     runtime_path,
 )
@@ -413,6 +415,14 @@ def test_notification(verbose: bool = False) -> int:
     return 0 if ok else 1
 
 
+def log_runtime_error(exc: RuntimeError) -> Path:
+    log_path = logs_dir() / "stderr.log"
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] digest command failed\n")
+        f.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+    return log_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Zotero 文献头条简报")
     parser.add_argument("--dry-run", action="store_true", help="只打印，不发通知、不写历史")
@@ -493,7 +503,9 @@ def main() -> None:
             )
         )
     except RuntimeError as exc:
+        log_path = log_runtime_error(exc)
         print(f"错误: {exc}", file=sys.stderr)
+        print(f"详细日志: {log_path}", file=sys.stderr)
         sys.exit(1)
 
 

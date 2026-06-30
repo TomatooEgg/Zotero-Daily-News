@@ -626,6 +626,7 @@ def api_refresh_queue():
     try:
         queue = refresh_queue(force=force)
     except Exception as exc:
+        app.logger.exception("刷新待推清单失败")
         return jsonify({"error": str(exc)}), 500
     return jsonify({"ok": True, "created_at": queue.get("created_at"), "count": len(queue.get("items") or [])})
 
@@ -638,6 +639,7 @@ def api_prepare_queue():
     try:
         _, prepared = prepare_queue(skip_llm=skip_llm)
     except Exception as exc:
+        app.logger.exception("预生成待推清单失败")
         return jsonify({"error": str(exc)}), 500
     return jsonify({"ok": True, "prepared": prepared})
 
