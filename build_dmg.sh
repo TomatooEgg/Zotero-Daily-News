@@ -5,53 +5,46 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Zotero 简报.app"
 LINK_APP_NAME="Zotero Digest Link.app"
+ARCH="${ZOTERO_DAILY_NEWS_MAC_ARCH:-$(uname -m)}"
+BUILD_VENV="$PROJECT_DIR/.build-macos-venv"
+BUILD_PYTHON="$BUILD_VENV/bin/python"
+BUILD_EXE="$PROJECT_DIR/build/macos-exe"
 STAGE="$PROJECT_DIR/dist/stage"
 APP_DIR="$STAGE/$APP_NAME"
 LINK_DIR="$STAGE/$LINK_APP_NAME"
-BUNDLE_APP="$APP_DIR/Contents/Resources/app"
-DMG_NAME="Zotero-Digest.dmg"
+RUNTIME_DIR="$APP_DIR/Contents/Resources/runtime"
+DMG_NAME="Zotero-Daily-News-macOS-${ARCH}.dmg"
 DMG_PATH="$PROJECT_DIR/dist/$DMG_NAME"
 
-echo "==> 清理并创建 staging"
-rm -rf "$STAGE"
-mkdir -p "$BUNDLE_APP" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
+echo "==> Preparing staging directory"
+rm -rf "$STAGE" "$BUILD_EXE"
+mkdir -p "$RUNTIME_DIR" "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" \
   "$LINK_DIR/Contents/MacOS" "$LINK_DIR/Contents/Resources"
+ln -s /Applications "$STAGE/Applications"
 
-echo "==> 复制项目文件"
-rsync -a \
-  --exclude '.git/' \
-  --exclude '.venv/' \
-  --exclude 'dist/' \
-  --exclude 'summaries/' \
-  --exclude 'hubs/' \
-  --exclude 'logs/' \
-  --exclude 'bin/' \
-  --exclude 'Zotero 简报.app/' \
-  --exclude 'Zotero Digest Link.app/' \
-  --exclude '.env' \
-  --exclude 'history.json' \
-  --exclude 'queue.json' \
-  --exclude 'pending_publish.json' \
-  --exclude 'com.*.zotero-digest*.plist' \
-  --exclude '__pycache__/' \
-  --exclude '.DS_Store' \
-  --exclude '.cursor/' \
-  "$PROJECT_DIR/" "$BUNDLE_APP/"
+echo "==> Installing build dependencies"
+if [[ ! -x "$BUILD_PYTHON" ]]; then
+  python3 -m venv "$BUILD_VENV"
+fi
+"$BUILD_PYTHON" -m pip install --upgrade pip -q
+"$BUILD_PYTHON" -m pip install -r "$PROJECT_DIR/requirements.txt" -q
+"$BUILD_PYTHON" -m pip install "cx_Freeze>=7.2" -q
 
-mkdir -p "$BUNDLE_APP/summaries" "$BUNDLE_APP/hubs" "$BUNDLE_APP/logs" "$BUNDLE_APP/bin"
-
-echo "==> 创建虚拟环境并安装依赖"
-python3 -m venv "$BUNDLE_APP/.venv"
-"$BUNDLE_APP/.venv/bin/pip" install --upgrade pip -q
-"$BUNDLE_APP/.venv/bin/pip" install -r "$BUNDLE_APP/requirements.txt" -q
+echo "==> Freezing Python runtime"
+(
+  cd "$PROJECT_DIR"
+  ZDN_MACOS_BUILD_EXE="$BUILD_EXE" "$BUILD_PYTHON" setup_macos.py build_exe
+)
+rsync -a "$BUILD_EXE/" "$RUNTIME_DIR/"
+mkdir -p "$RUNTIME_DIR/bin"
 
 install_binary() {
   local name="$1"
-  local dest="$BUNDLE_APP/bin/$name"
+  local dest="$RUNTIME_DIR/bin/$name"
   if [[ -x "$PROJECT_DIR/bin/$name" ]]; then
     cp "$PROJECT_DIR/bin/$name" "$dest"
     chmod +x "$dest"
-    echo "    $name ← 项目 bin/"
+    echo "    ${name} -> project bin/"
     return
   fi
   if command -v "$name" &>/dev/null; then
@@ -59,61 +52,46 @@ install_binary() {
     src="$(command -v "$name")"
     if [[ "$name" == "terminal-notifier" && -f "$src" && $(stat -f%z "$src") -lt 4096 ]]; then
       local real
-      real=$(grep -o '"/[^"]*terminal-notifier"' "$src" | tr -d '"' | head -1)
+      real=$(grep -o '"/[^"]*terminal-notifier"' "$src" | tr -d '"' | head -1 || true)
       [[ -n "$real" && -f "$real" ]] && src="$real"
     fi
     cp "$src" "$dest"
     chmod +x "$dest"
-    echo "    $name ← $src"
+    echo "    ${name} -> ${src}"
     return
   fi
-  echo "    警告: 未找到 $name，通知功能可能受限"
+  echo "    warning: ${name} not found; notification support may be limited"
 }
 
-echo "==> 复制通知工具"
+echo "==> Copying notification helpers"
 install_binary terminal-notifier
 install_binary alerter
-
-if [[ ! -f "$BUNDLE_APP/.env" ]]; then
-  cp "$BUNDLE_APP/.env.example" "$BUNDLE_APP/.env"
-fi
 
 cat > "$APP_DIR/Contents/MacOS/launcher" << 'LAUNCHER'
 #!/bin/bash
 BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
-if [[ -d "$BUNDLE/Contents/Resources/app" ]]; then
-  PROJECT="$BUNDLE/Contents/Resources/app"
-else
-  PROJECT="$(cat "$BUNDLE/Contents/Resources/project.path" 2>/dev/null || dirname "$BUNDLE")"
-fi
-cd "$PROJECT" || exit 1
-PYTHON="$PROJECT/.venv/bin/python"
+RUNTIME="$BUNDLE/Contents/Resources/runtime"
+EXECUTABLE="$RUNTIME/launcher"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
+cd "$RUNTIME" || exit 1
 if [ "$#" -gt 0 ]; then
   mkdir -p "$SUPPORT_DIR"
   osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
     > "$SUPPORT_DIR/front_app.txt" 2>/dev/null || true
 fi
-if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" "$PROJECT/launcher.py" "$@"
-else
-  exec "$PYTHON" "$PROJECT/launcher.py" "$@"
-fi
+exec "$EXECUTABLE" "$@"
 LAUNCHER
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
 
 cat > "$LINK_DIR/Contents/MacOS/launcher" << 'LINK_LAUNCHER'
 #!/bin/bash
 BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
-if [[ -d "$BUNDLE/../Zotero 简报.app/Contents/Resources/app" ]]; then
-  PROJECT="$BUNDLE/../Zotero 简报.app/Contents/Resources/app"
+if [[ -d "$BUNDLE/../Zotero 简报.app/Contents/Resources/runtime" ]]; then
   MAIN_APP="$BUNDLE/../Zotero 简报.app"
 else
-  PROJECT="$(cat "$BUNDLE/Contents/Resources/project.path" 2>/dev/null || dirname "$BUNDLE")"
-  MAIN_APP="$PROJECT/Zotero 简报.app"
+  MAIN_APP="$(cat "$BUNDLE/Contents/Resources/main_app.path" 2>/dev/null || dirname "$BUNDLE")/Zotero 简报.app"
 fi
-cd "$PROJECT" || exit 1
-PYTHON="$PROJECT/.venv/bin/python"
+EXECUTABLE="$MAIN_APP/Contents/Resources/runtime/launcher"
 SUPPORT_DIR="$HOME/Library/Application Support/Zotero Digest"
 mkdir -p "$SUPPORT_DIR"
 osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' \
@@ -131,14 +109,13 @@ for arg in "$@"; do
       ;;
   esac
 done
-if sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
-  exec arch -arm64 "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
-else
-  exec "$PYTHON" "$PROJECT/digest_link_handler.py" "$@"
+if [[ -x "$EXECUTABLE" ]]; then
+  exec "$EXECUTABLE" --digest-link-handler "$@"
 fi
+exit 0
 LINK_LAUNCHER
 chmod +x "$LINK_DIR/Contents/MacOS/launcher"
-echo "$BUNDLE_APP" > "$LINK_DIR/Contents/Resources/project.path"
+echo "$(dirname "$APP_DIR")" > "$LINK_DIR/Contents/Resources/main_app.path"
 
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -152,7 +129,7 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key><string>Zotero 简报</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><false/>
@@ -173,7 +150,7 @@ cat > "$LINK_DIR/Contents/Info.plist" << 'LINK_PLIST'
     <key>CFBundleDisplayName</key><string>Zotero Digest Link</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSUIElement</key><true/>
@@ -207,7 +184,7 @@ if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$LINK_DIR" 2>/dev/null || true
 fi
 
-echo "==> 生成 DMG"
+echo "==> Creating DMG"
 hdiutil create \
   -volname "Zotero 简报" \
   -srcfolder "$STAGE" \
@@ -216,11 +193,11 @@ hdiutil create \
   "$DMG_PATH"
 
 echo ""
-echo "完成！"
+echo "Done."
 echo "  DMG: $DMG_PATH"
-echo "  大小: $(du -h "$DMG_PATH" | cut -f1)"
+echo "  Size: $(du -h "$DMG_PATH" | cut -f1)"
 echo ""
-echo "使用方式："
-echo "  1. 打开 DMG，将「Zotero 简报.app」拖到「应用程序」"
-echo "  2. 首次启动前编辑应用内 .env（右键 → 显示包内容 → Contents/Resources/app/.env）填入 DEEPSEEK_API_KEY"
-echo "  3. 在控制台「重载定时任务」以注册推送计划"
+echo "Usage:"
+echo "  1. Open the DMG and drag Zotero 简报.app to Applications."
+echo "  2. On first launch, complete the setup wizard."
+echo "  3. Scheduled delivery is enabled only after validation succeeds."

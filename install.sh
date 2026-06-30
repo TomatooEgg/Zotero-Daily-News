@@ -11,12 +11,7 @@ python3 -m venv "$VENV"
 "$VENV/bin/pip" install --upgrade pip -q
 "$VENV/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -q
 
-mkdir -p "$PROJECT_DIR/logs" "$PROJECT_DIR/summaries" "$PROJECT_DIR/hubs" "$BIN_DIR"
-
-if [[ ! -f "$PROJECT_DIR/.env" ]]; then
-  echo "==> 创建 .env（请填入 DEEPSEEK_API_KEY）"
-  cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-fi
+mkdir -p "$BIN_DIR"
 
 install_notifier() {
   # 复制真实 Mach-O，避免 shell 包装脚本被 subprocess 误用
@@ -65,11 +60,7 @@ else
   echo "    （无 alerter 时仍可点击通知正文跳转 HTML）"
 fi
 
-echo "==> 生成并加载 launchd 定时任务"
-cd "$PROJECT_DIR"
-"$VENV/bin/python" -c "from launchd_mgr import write_plist, reload_launchd; from config_manager import load_config; c=load_config(); write_plist(c); ok,m=reload_launchd(c); print(m)"
-
-chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/prepare_queue.sh" "$PROJECT_DIR/digest.py" "$PROJECT_DIR/app.py"
+chmod +x "$PROJECT_DIR/start_ui.sh" "$PROJECT_DIR/run.sh" "$PROJECT_DIR/prepare_queue.sh" "$PROJECT_DIR/zotero_daily.py"
 
 echo "==> 构建桌面应用"
 bash "$PROJECT_DIR/build_app.sh"
@@ -80,3 +71,4 @@ echo "  双击打开: $PROJECT_DIR/Zotero 简报.app"
 echo "  深链接:   $PROJECT_DIR/Zotero Digest Link.app（与主 App 同目录，build 时已注册）"
 echo "  或桌面:   ~/Desktop/Zotero 简报.app"
 echo "  命令行:   bash $PROJECT_DIR/start_ui.sh"
+echo "  首次启动: 按界面向导填写 DeepSeek Key、Zotero 写入 Key 和模型名，验证通过后再启用定时任务"

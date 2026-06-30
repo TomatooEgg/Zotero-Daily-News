@@ -71,7 +71,9 @@
     .note-star { filter: grayscale(1); opacity: 0.45; }
     .note-star.active { filter: none; opacity: 1; }
     .note-card.starred .note-star { filter: none; opacity: 1; }
+    .note-title-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
     .note-card h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
+    .note-title-row h3 { margin: 0; }
     .note-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .note-detail { flex: 1; min-width: 240px; overflow-y: auto; padding: 0; background: #fff; display: flex; flex-direction: column; }
     .note-detail.empty { display: flex; align-items: center; justify-content: center; color: var(--muted); padding: 24px; }
@@ -116,10 +118,6 @@
     .schedule-item { display: flex; gap: 8px; align-items: center; }
     .schedule-item input { width: 80px; }
     .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
-    .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .queue-table th, .queue-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    .queue-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
-    .queue-table tr.push-slot { background: #f0f7ff; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
     .badge.pending { background: #f2f2f7; color: var(--muted); }
     .badge.ready { background: #d1fae5; color: #065f46; }
@@ -128,6 +126,13 @@
     .badge.skipped { background: #fef3c7; color: #92400e; }
     pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 10px; font-size: 12px; overflow: auto; max-height: 200px; white-space: pre-wrap; }
     #toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 18px; border-radius: 10px; display: none; font-size: 14px; z-index: 99; }
+    .setup-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 120; }
+    .setup-backdrop.open { display: flex; }
+    .setup-modal { background: #fff; width: min(720px, 100%); max-height: 92vh; overflow-y: auto; border-radius: 14px; box-shadow: 0 20px 70px rgba(0,0,0,.25); padding: 22px; }
+    .setup-modal h2 { font-size: 1.2rem; margin-bottom: 6px; }
+    .setup-modal h3 { font-size: .95rem; margin: 18px 0 10px; }
+    .setup-modal .hint { margin-bottom: 12px; }
+    .setup-status { min-height: 20px; font-size: 13px; margin-top: 10px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -194,11 +199,32 @@
               <label>Markdown 总结路径</label>
               <input id="summaries_dir" value="{{ config.summaries_dir }}">
               <div class="hint">相对项目目录或绝对路径</div>
+              <div class="hint">当前实际目录：{{ config.summaries_dir_resolved }}</div>
             </div>
             <div>
               <label>HTML 中转页路径</label>
               <input id="hubs_dir" value="{{ config.hubs_dir }}">
+              <div class="hint">当前实际目录：{{ config.hubs_dir_resolved }}</div>
             </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>DeepSeek</h2>
+          <p class="hint" id="deepseek_config_status">加载中…</p>
+          <div class="row">
+            <div>
+              <label>API Key</label>
+              <input id="deepseek_api_key" type="password" autocomplete="off" placeholder="sk-...">
+              <div class="hint">留空保存则保留已有 Key</div>
+            </div>
+            <div>
+              <label>Base URL</label>
+              <input id="deepseek_base_url" value="https://api.deepseek.com">
+            </div>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button type="button" class="btn-secondary" onclick="testDeepSeekConfig()">测试连接</button>
+            <button type="button" class="btn-primary" onclick="saveDeepSeekConfig()">保存 DeepSeek</button>
           </div>
         </div>
         <div class="card">
@@ -224,7 +250,10 @@
         <div class="card">
           <h2>发送时间</h2>
           <div id="schedule_list" class="schedule-list"></div>
-          <div class="actions"><button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button></div>
+          <div class="actions">
+            <button class="btn-secondary" onclick="addSchedule()">+ 添加时间</button>
+            <button class="btn-primary" onclick="reloadSchedule()">保存并重载定时任务</button>
+          </div>
         </div>
         <div class="card">
           <h2>头条简报 Prompt</h2>
@@ -254,7 +283,7 @@
         <div class="card">
           <div class="actions">
             <button class="btn-primary" onclick="saveConfig()">保存配置</button>
-            <button class="btn-secondary" onclick="reloadSchedule()">重载定时任务</button>
+            <button class="btn-secondary" onclick="reloadSchedule()">保存并重载定时任务</button>
           </div>
         </div>
       </div>
@@ -267,15 +296,15 @@
           <h2>待推清单</h2>
           <p class="hint" id="queue_meta">加载中…</p>
           <div class="actions" style="margin-bottom:12px">
-            <button class="btn-secondary" onclick="refreshQueue(false)">随机刷新清单</button>
-            <button class="btn-secondary" onclick="prepareQueue()">预生成（前 N 篇）</button>
+            <button class="btn-secondary" onclick="refreshQueue(false)">生成待推清单</button>
+            <button class="btn-secondary" onclick="prepareQueue()">生成 News（前 N 篇）</button>
             <button class="btn-ghost" onclick="refreshQueue(true)">强制刷新</button>
+            <button class="btn-secondary" onclick="showNotesTab()">打开笔记库</button>
           </div>
-          <div id="queue_list"></div>
         </div>
         <div class="card">
           <h2>状态</h2>
-          <p>推送任务：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
+          <p>定时任务（{{ scheduler_name }}）：{% if launchd_loaded %}<span class="status ok">已加载</span>{% else %}<span class="status bad">未加载</span>{% endif %}</p>
           <p id="prepare_launchd_status" class="hint">预生成任务：加载中…</p>
           <div class="actions">
             <button class="btn-secondary" onclick="refreshStatus()">刷新</button>
@@ -294,6 +323,51 @@
   </div>
 
   <div id="toast"></div>
+  <div class="setup-backdrop" id="setup_modal">
+    <div class="setup-modal">
+      <h2>首次配置</h2>
+      <p class="hint">填写必要凭证并验证通过后，再启用定时推送任务。</p>
+
+      <h3>DeepSeek</h3>
+      <div class="row">
+        <div>
+          <label>API Key</label>
+          <input id="setup_deepseek_api_key" type="password" autocomplete="off" placeholder="sk-...">
+        </div>
+        <div>
+          <label>Base URL</label>
+          <input id="setup_deepseek_base_url" value="https://api.deepseek.com">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>简报模型</label>
+          <input id="setup_deepseek_briefing_model" value="{{ config.deepseek_briefing_model }}">
+        </div>
+        <div>
+          <label>深度解读模型</label>
+          <input id="setup_deepseek_deep_read_model" value="{{ config.deepseek_deep_read_model }}">
+        </div>
+      </div>
+
+      <h3>Zotero 写入 Key</h3>
+      <div class="row">
+        <div>
+          <label>API Key</label>
+          <input id="setup_zotero_api_key" type="password" autocomplete="off" placeholder="zotero.org/settings/keys">
+        </div>
+        <div>
+          <label>Library ID（可选）</label>
+          <input id="setup_zotero_library_id" placeholder="留空则自动解析">
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="setup_verify_btn" onclick="completeFirstRunSetup()">验证并启用定时任务</button>
+        <button class="btn-secondary" onclick="closeSetupModal()">稍后配置</button>
+      </div>
+      <div class="setup-status" id="setup_status"></div>
+    </div>
+  </div>
 
   <script src="/static/note-view.js"></script>
   <script>
@@ -319,15 +393,55 @@
         document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
         if (tab.dataset.panel === 'notes') loadNotes();
         if (tab.dataset.panel === 'actions') { refreshStatus(); loadQueue(); }
-        if (tab.dataset.panel === 'settings') loadZoteroConfig();
+        if (tab.dataset.panel === 'settings') { loadDeepSeekConfig(); loadZoteroConfig(); }
       });
     });
+
+    function showNotesTab() {
+      const tab = document.querySelector('.tab[data-panel="notes"]');
+      if (tab) tab.click();
+    }
+
+    function showActionsTab() {
+      const tab = document.querySelector('.tab[data-panel="actions"]');
+      if (tab) tab.click();
+    }
 
     function toast(msg) {
       const el = document.getElementById('toast');
       el.textContent = msg;
       el.style.display = 'block';
       setTimeout(() => el.style.display = 'none', 3000);
+    }
+
+    function setSetupStatus(msg) {
+      const el = document.getElementById('setup_status');
+      if (el) el.textContent = msg || '';
+    }
+
+    function closeSetupModal() {
+      document.getElementById('setup_modal').classList.remove('open');
+    }
+
+    function openSetupModal() {
+      document.getElementById('setup_modal').classList.add('open');
+    }
+
+    async function loadSetupStatus() {
+      try {
+        const res = await fetch('/api/setup/status');
+        const data = await res.json();
+        if (!res.ok) return;
+        if (data.deepseek) {
+          document.getElementById('setup_deepseek_base_url').value = data.deepseek.base_url || 'https://api.deepseek.com';
+          document.getElementById('setup_deepseek_briefing_model').value = data.deepseek.briefing_model || '';
+          document.getElementById('setup_deepseek_deep_read_model').value = data.deepseek.deep_read_model || '';
+        }
+        if (data.zotero) {
+          document.getElementById('setup_zotero_library_id').value = data.zotero.library_id || '';
+        }
+        if (data.needs_setup) openSetupModal();
+      } catch (_) {}
     }
 
     function loadStarred() {
@@ -526,13 +640,14 @@
       }
       el.innerHTML = notes.map(n => {
         const starred = starredIds.has(n.id);
+        const pendingBadge = n.pending ? statusBadge('待推送', 'pending') : '';
         return `
         <div class="note-card${selectedNoteId === n.id && !selectionMode ? ' active' : ''}${selectedIds.has(n.id) ? ' selected' : ''}${starred ? ' starred' : ''}"
              onclick="handleNoteCardClick('${n.id}')">
           ${selectionMode ? `<input type="checkbox" class="note-check" ${selectedIds.has(n.id) ? 'checked' : ''}
             onclick="event.stopPropagation(); toggleNoteSelection('${n.id}', this.checked)">` : ''}
           <div class="note-body">
-            <h3>${esc(n.title)}</h3>
+            <div class="note-title-row"><h3>${esc(n.title)}</h3>${pendingBadge}</div>
             <p>${esc(n.briefing || '（无简报）')}</p>
           </div>
           ${!selectionMode ? `
@@ -700,6 +815,21 @@
     function addSchedule() { initialSchedule.push({ hour: 9, minute: 0 }); renderSchedule(); }
     function removeSchedule(i) { initialSchedule.splice(i, 1); renderSchedule(); }
 
+    function collectSchedule() {
+      const rows = document.querySelectorAll('#schedule_list .schedule-item');
+      const schedule = [];
+      rows.forEach(row => {
+        const hourInput = row.querySelector('input[data-f="hour"]');
+        const minuteInput = row.querySelector('input[data-f="minute"]');
+        if (!hourInput || !minuteInput) return;
+        const hour = Math.max(0, Math.min(23, parseInt(hourInput.value, 10)));
+        const minute = Math.max(0, Math.min(59, parseInt(minuteInput.value, 10)));
+        if (Number.isFinite(hour) && Number.isFinite(minute)) schedule.push({ hour, minute });
+      });
+      initialSchedule.splice(0, initialSchedule.length, ...schedule);
+      return schedule;
+    }
+
     function gatherConfig() {
       const count = +document.getElementById('count').value;
       let queueSize = +document.getElementById('queue_size').value;
@@ -713,7 +843,7 @@
         pre_generate_deep_read: document.getElementById('pre_generate_deep_read').checked,
         summaries_dir: document.getElementById('summaries_dir').value,
         hubs_dir: document.getElementById('hubs_dir').value,
-        schedule: initialSchedule,
+        schedule: collectSchedule(),
         summary_prompt: document.getElementById('summary_prompt').value,
         pdf_summary_enabled: document.getElementById('pdf_summary_enabled').checked,
         pdf_summary_max_chars: +document.getElementById('pdf_summary_max_chars').value,
@@ -726,7 +856,66 @@
     async function saveConfig() {
       const res = await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gatherConfig()) });
       const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '保存失败');
+        return false;
+      }
       toast(data.message || '已保存');
+      return true;
+    }
+
+    async function loadDeepSeekConfig() {
+      const statusEl = document.getElementById('deepseek_config_status');
+      if (!statusEl) return;
+      try {
+        const res = await fetch('/api/deepseek-config');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '加载失败');
+        statusEl.textContent = data.configured
+          ? '已配置（' + (data.api_key_masked || '••••') + '）'
+          : '未配置 — 填写 API Key 后才能生成 AI 简报和深度解读';
+        document.getElementById('deepseek_base_url').value = data.base_url || 'https://api.deepseek.com';
+        document.getElementById('deepseek_briefing_model').value = data.briefing_model || '';
+        document.getElementById('deepseek_deep_read_model').value = data.deep_read_model || '';
+        document.getElementById('deepseek_api_key').value = '';
+      } catch (err) {
+        statusEl.textContent = err.message || '加载失败';
+      }
+    }
+
+    async function saveDeepSeekConfig(extra) {
+      const body = extra || {
+        api_key: document.getElementById('deepseek_api_key').value.trim(),
+        base_url: document.getElementById('deepseek_base_url').value.trim(),
+        briefing_model: document.getElementById('deepseek_briefing_model').value.trim(),
+        deep_read_model: document.getElementById('deepseek_deep_read_model').value.trim(),
+      };
+      const res = await fetch('/api/deepseek-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || '保存失败');
+      if (!extra) {
+        toast(data.message || 'DeepSeek 配置已保存');
+        document.getElementById('deepseek_api_key').value = '';
+        loadDeepSeekConfig();
+      }
+      return data;
+    }
+
+    async function testDeepSeekConfig() {
+      try {
+        await saveDeepSeekConfig();
+        toast('测试 DeepSeek 连接中…');
+        const res = await fetch('/api/deepseek-config/test', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '连接失败');
+        toast(data.message || 'DeepSeek 连接成功');
+      } catch (err) {
+        toast(err.message || 'DeepSeek 连接失败');
+      }
     }
 
     async function loadZoteroConfig() {
@@ -782,97 +971,131 @@
     }
 
     async function reloadSchedule() {
-      await saveConfig();
+      const saved = await saveConfig();
+      if (!saved) return;
       const res = await fetch('/api/reload-schedule', { method: 'POST' });
       const data = await res.json();
       toast(data.message);
     }
 
+    async function completeFirstRunSetup() {
+      const btn = document.getElementById('setup_verify_btn');
+      btn.disabled = true;
+      setSetupStatus('保存配置…');
+      try {
+        const deepseekBody = {
+          api_key: document.getElementById('setup_deepseek_api_key').value.trim(),
+          base_url: document.getElementById('setup_deepseek_base_url').value.trim(),
+          briefing_model: document.getElementById('setup_deepseek_briefing_model').value.trim(),
+          deep_read_model: document.getElementById('setup_deepseek_deep_read_model').value.trim(),
+        };
+        await saveDeepSeekConfig(deepseekBody);
+
+        const zoteroBody = {
+          api_key: document.getElementById('setup_zotero_api_key').value.trim(),
+          library_id: document.getElementById('setup_zotero_library_id').value.trim(),
+        };
+        let res = await fetch('/api/zotero-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zoteroBody),
+        });
+        let data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Zotero 凭证保存失败');
+
+        setSetupStatus('验证 DeepSeek…');
+        res = await fetch('/api/deepseek-config/test', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'DeepSeek 验证失败');
+
+        setSetupStatus('验证 Zotero 写入 Key…');
+        res = await fetch('/api/zotero-config/test', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || 'Zotero 验证失败');
+        if (data.library_id) document.getElementById('setup_zotero_library_id').value = data.library_id;
+
+        setSetupStatus('启用定时任务…');
+        if (!(await saveConfig())) throw new Error('配置保存失败');
+        res = await fetch('/api/reload-schedule', { method: 'POST' });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '定时任务启用失败');
+
+        setSetupStatus('配置完成');
+        closeSetupModal();
+        toast('配置完成，定时任务已启用');
+        loadDeepSeekConfig();
+        loadZoteroConfig();
+        refreshStatus();
+      } catch (err) {
+        setSetupStatus(err.message || '配置失败');
+        toast(err.message || '配置失败');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     async function runNow(force) {
+      showActionsTab();
+      const buttons = document.querySelectorAll('button[onclick^="runNow("]');
+      buttons.forEach((btn) => btn.disabled = true);
+      const stdoutEl = document.getElementById('stdout_log');
+      const stderrEl = document.getElementById('stderr_log');
+      stdoutEl.textContent = force ? '强制推送中…' : '推送中…';
+      stderrEl.textContent = '';
       toast(force ? '强制推送中…' : '推送中…');
-      const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ force }) });
-      const data = await res.json();
-      if (data.stdout) document.getElementById('stdout_log').textContent = data.stdout;
-      if (data.stderr) document.getElementById('stderr_log').textContent = data.stderr;
-      let msg = data.ok ? '推送完成' : '推送失败';
-      if (!data.ok && data.stderr) {
-        const hint = data.stderr.split('\n').find((l) => l.includes('就绪') || l.includes('预生成') || l.includes('清单'));
-        if (hint) msg = hint;
+      try {
+        const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ force }) });
+        const data = await res.json();
+        stdoutEl.textContent = data.stdout || '';
+        stderrEl.textContent = data.stderr || '';
+        let msg = data.ok ? '推送完成' : '推送失败';
+        if (!data.ok && data.stderr) {
+          const hint = data.stderr.split('\n').find((l) => l.includes('就绪') || l.includes('预生成') || l.includes('清单') || l.includes('No module named'));
+          if (hint) msg = hint;
+        }
+        if (data.ok && data.notifications_failed > 0) {
+          msg = '推送完成，但部分通知未弹出，请查看日志';
+        }
+        toast(msg);
+        if (data.ok) { loadNotes(); loadQueue(); }
+      } catch (err) {
+        const msg = err.message || '推送请求失败';
+        stderrEl.textContent = msg;
+        toast(msg);
+      } finally {
+        buttons.forEach((btn) => btn.disabled = false);
+        refreshStatus({ updateLogs: false });
       }
-      if (data.ok && data.notifications_failed > 0) {
-        msg = '推送完成，但部分通知未弹出，请查看日志';
-      }
-      toast(msg);
-      if (data.ok) { loadNotes(); loadQueue(); }
-      refreshStatus();
     }
 
     function statusBadge(label, kind) {
       return `<span class="badge ${kind}">${esc(label)}</span>`;
     }
 
-    function queueStatusLabel(status) {
-      const map = { pending: ['待生成', 'pending'], ready: ['就绪', 'ready'], pushed: ['已推送', 'pushed'], error: ['失败', 'error'] };
-      const [label, kind] = map[status] || [status || '未知', 'pending'];
-      return statusBadge(label, kind);
-    }
-
-    function deepReadLabel(state) {
-      const map = {
-        pending: ['深度待生成', 'pending'],
-        ready: ['深度就绪', 'ready'],
-        skipped: ['无深度', 'skipped'],
-        error: ['深度失败', 'error'],
-      };
-      const [label, kind] = map[state] || [state || '-', 'pending'];
-      return statusBadge(label, kind);
-    }
-
     async function loadQueue() {
       const meta = document.getElementById('queue_meta');
-      const list = document.getElementById('queue_list');
-      if (!meta || !list) return;
+      if (!meta) return;
       try {
         const res = await fetch('/api/queue');
         const data = await res.json();
         const pushCount = data.push_count || data.settings?.push_count || 2;
         if (!data.exists || !data.items?.length) {
-          meta.textContent = '暂无待推清单。点击「随机刷新清单」从 Zotero 随机选文。';
-          list.innerHTML = '';
+          meta.textContent = '暂无待推清单。生成清单后，点击「生成 News」写入笔记库。';
           return;
         }
         const created = data.created_at ? `创建于 ${data.created_at}` : '';
         const prepared = data.prepared_at ? ` · 最近预生成 ${data.prepared_at}` : '';
-        meta.textContent = `${created}${prepared} · 就绪 ${data.push_ready_count}/${pushCount}（推送位）`;
-        const pushWindowKeys = new Set();
-        let nonPushed = 0;
-        for (const item of data.items) {
-          if (item.status === 'pushed') continue;
-          if (nonPushed >= pushCount) break;
-          pushWindowKeys.add(item.item_key);
-          nonPushed++;
-        }
-        list.innerHTML = `<table class="queue-table"><thead><tr>
-          <th>#</th><th>标题</th><th>简报</th><th>深度解读</th><th>PDF</th>
-        </tr></thead><tbody>` + data.items.map((item, i) => {
-          const inPushSlot = pushWindowKeys.has(item.item_key);
-          const slot = inPushSlot ? ' push-slot' : '';
-          const pdf = item.has_pdf ? '有' : '无';
-          return `<tr class="${slot.trim()}">
-            <td>${i + 1}${inPushSlot ? ' <span class="hint">推送</span>' : ''}</td>
-            <td>${esc(item.title || item.item_key)}</td>
-            <td>${queueStatusLabel(item.status)}</td>
-            <td>${deepReadLabel(item.deep_read)}</td>
-            <td>${pdf}</td>
-          </tr>`;
-        }).join('') + '</tbody></table>';
+        const total = data.items.length;
+        const ready = data.ready_count ?? data.items.filter(item => item.status === 'ready').length;
+        const pushed = data.items.filter(item => item.status === 'pushed').length;
+        meta.textContent = `${created}${prepared} · 清单 ${total} 篇 · News 就绪 ${ready} 篇 · 已推送 ${pushed} 篇 · 推送位 ${data.push_ready_count}/${pushCount}`;
       } catch (_) {
         meta.textContent = '加载待推清单失败';
       }
     }
 
     async function refreshQueue(force) {
-      toast(force ? '强制刷新清单…' : '随机刷新清单…');
+      toast(force ? '强制生成待推清单…' : '生成待推清单…');
       const res = await fetch('/api/queue/refresh', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -880,17 +1103,17 @@
       });
       const data = await res.json();
       if (!res.ok) { toast(data.error || '刷新失败'); return; }
-      toast(`已刷新 ${data.count} 篇`);
+      toast(`已生成 ${data.count} 篇待推清单；点击「生成 News」写入笔记库`);
       loadQueue();
     }
 
     async function prepareQueue() {
-      toast('预生成中，请稍候…');
+      toast('生成 News 中，请稍候…');
       const res = await fetch('/api/queue/prepare', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
       const data = await res.json();
-      if (!res.ok) { toast(data.error || '预生成失败'); return; }
+      if (!res.ok) { toast(data.error || '生成 News 失败'); return; }
       const n = data.prepared ?? 0;
-      toast(n > 0 ? `预生成完成（${n} 篇）` : '预生成完成，推送位已就绪，无需处理');
+      toast(n > 0 ? `News 已生成（${n} 篇），可在笔记库查看` : 'News 已就绪，可在笔记库查看');
       loadQueue();
       loadNotes();
     }
@@ -913,11 +1136,13 @@
       loadNotes();
     }
 
-    async function refreshStatus() {
+    async function refreshStatus(options = {}) {
       const res = await fetch('/api/status');
       const data = await res.json();
-      document.getElementById('stdout_log').textContent = data.stdout;
-      document.getElementById('stderr_log').textContent = data.stderr;
+      if (options.updateLogs !== false) {
+        document.getElementById('stdout_log').textContent = data.stdout;
+        document.getElementById('stderr_log').textContent = data.stderr;
+      }
       const prep = document.getElementById('prepare_launchd_status');
       if (prep && data.launchd) {
         const ld = data.launchd;
@@ -1015,7 +1240,9 @@
       const noteId = params.get('note');
       if (noteId) navigateToNote(noteId);
     });
+    loadDeepSeekConfig();
     loadZoteroConfig();
+    loadSetupStatus();
   </script>
 </body>
 </html>
