@@ -179,6 +179,22 @@ def wait_for_setup_modal(page, base_url: str) -> None:
         raise AssertionError(f"setup modal did not open at {base_url}: {json.dumps(state, ensure_ascii=False)}") from exc
 
 
+def wait_for_queue_status(queue_path: Path, status: str, timeout: int = 60) -> dict:
+    deadline = time.time() + timeout
+    last_queue: dict | None = None
+    while time.time() < deadline:
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+            last_queue = data
+            items = data.get("items") or []
+            if items and items[0].get("status") == status:
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+        time.sleep(0.5)
+    raise AssertionError(f"queue item did not reach status={status}: {last_queue}")
+
+
 def delete_test_tasks(prefix: str) -> None:
     for idx in range(1, 25):
         for kind in ("Push", "Prepare"):
@@ -329,10 +345,7 @@ def main() -> int:
                 page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_selector('button[onclick="runNow(false)"]', timeout=20000)
                 page.locator('button[onclick="runNow(false)"]').first.click()
-                page.wait_for_function(
-                    "document.querySelector('#stdout_log') && document.querySelector('#stdout_log').textContent.includes('@@NOTIFY@@')",
-                    timeout=60000,
-                )
+                wait_for_queue_status(runtime_dir / "queue.json", "pushed")
                 log_step("UI push completed")
             finally:
                 browser.close()
